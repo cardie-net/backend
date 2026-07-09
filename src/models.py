@@ -1,7 +1,8 @@
+from enum import Enum
 from typing import List, Literal, Optional, Union
 
 from pydantic import BaseModel
-from sqlalchemy import JSON, Column
+from sqlalchemy import JSON, Column, UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -37,9 +38,16 @@ class User(UserBase, table=True):
 
 
 # Deck Models
+class PrivacyLevel(str, Enum):
+    private = "private"
+    unlisted = "unlisted"
+    public = "public"
+
+
 class DeckBase(SQLModel):
     name: str
     slug: str = Field(index=True)
+    privacy: PrivacyLevel = Field(default=PrivacyLevel.private)
 
 
 class DeckCreate(DeckBase):
@@ -53,6 +61,8 @@ class DeckRead(DeckBase):
 
 class Deck(DeckBase, table=True):
     __tablename__ = "decks"
+    __table_args__ = (UniqueConstraint("user_id", "slug", name="uq_deck_user_slug"),)
+
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: Optional[int] = Field(default=None, foreign_key="users.id")
 
