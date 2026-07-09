@@ -1,6 +1,6 @@
 from typing import List
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import crud, models
@@ -18,7 +18,11 @@ async def read_cards(
     user: models.User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # TODO: verify that the deck belongs to the user (or is public)
+    deck = await crud.get_deck(db, deck_id=deck_id)
+    if not deck:
+        raise HTTPException(status_code=404, detail="Deck not found")
+    if deck.user_id != user.id and deck.privacy == models.PrivacyLevel.private:
+        raise HTTPException(status_code=403, detail="Not enough permissions")
     return await crud.get_cards_for_deck(db, deck_id=deck_id, skip=skip, limit=limit)
 
 
@@ -29,5 +33,9 @@ async def create_card(
     user: models.User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # TODO: verify that the deck belongs to the user
+    deck = await crud.get_deck(db, deck_id=deck_id)
+    if not deck:
+        raise HTTPException(status_code=404, detail="Deck not found")
+    if deck.user_id != user.id:
+        raise HTTPException(status_code=403, detail="Not enough permissions")
     return await crud.create_card_for_deck(db=db, card=card, deck_id=deck_id)

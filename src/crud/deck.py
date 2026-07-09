@@ -27,3 +27,7 @@ async def create_deck_for_user(
     await db.commit()
     await db.refresh(db_deck)
     return db_deck
+
+
+async def get_deck(db: AsyncSession, deck_id: int):
+    return await db.get(models.Deck, deck_id)
