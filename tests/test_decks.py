@@ -50,3 +50,21 @@ async def test_unauthorized_deck_creation(async_client: AsyncClient):
 
     # Should be 401 Unauthorized because no token was passed
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_create_deck_non_unique_slug(async_client: AsyncClient, guest_token: str):
+    await async_client.post(
+        "/decks/",
+        json={"name": "Test Deck", "slug": "test-deck", "privacy": "private"},
+        headers={"Authorization": f"Bearer {guest_token}"},
+    )
+
+    response = await async_client.post(
+        "/decks/",
+        json={"name": "Another Deck", "slug": "test-deck", "privacy": "private"},
+        headers={"Authorization": f"Bearer {guest_token}"},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Deck with this slug already exists"}
