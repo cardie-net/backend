@@ -1,3 +1,4 @@
+import uuid
 from enum import Enum
 from typing import List, Literal, Optional, Union
 
@@ -45,7 +46,7 @@ class User(SQLModelBaseUserDB, table=True):
 # --- User Schemas (Pydantic, not table models) ---
 
 
-class UserRead(schemas.BaseUser[int]):
+class UserRead(schemas.BaseUser[uuid.UUID]):
     is_guest: bool
 
 
@@ -78,7 +79,7 @@ class DeckCreate(DeckBase):
 
 class DeckRead(DeckBase):
     id: int
-    user_id: int
+    user_id: uuid.UUID
 
 
 class Deck(DeckBase, table=True):
@@ -86,7 +87,7 @@ class Deck(DeckBase, table=True):
     __table_args__ = (UniqueConstraint("user_id", "slug", name="uq_deck_user_slug"),)
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    user_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    user_id: Optional[uuid.UUID] = Field(default=None, foreign_key="user.id")
 
     owner: Optional["User"] = Relationship(back_populates="decks")
     cards: List["Card"] = Relationship(

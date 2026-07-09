@@ -6,3 +6,7 @@ fastapi-users[sqlalchemy]
 httpx-oauth
 fastapi_users_db_sqlmodel
 pydantic-settings
+pytest
+pytest-asyncio
+httpx
+pytest-cov

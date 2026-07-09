@@ -11,7 +11,7 @@ from .backend import auth_backend, get_jwt_strategy
 from .oauth import google_oauth_client
 from .user_manager import UserManager, get_user_manager
 
-fastapi_users = FastAPIUsers[User, int](
+fastapi_users = FastAPIUsers[User, uuid.UUID](
     get_user_manager,
     [auth_backend],
 )
