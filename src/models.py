@@ -1,38 +1,83 @@
-from sqlalchemy import JSON, Boolean, Column, ForeignKey, Integer, String
-from sqlalchemy.orm import relationship
+from typing import List, Literal, Optional, Union
 
-from .database import Base
+from pydantic import BaseModel
+from sqlalchemy import JSON, Column
+from sqlmodel import Field, Relationship, SQLModel
 
 
-class User(Base):
+# Element types
+class TextElement(BaseModel):
+    type: Literal["text"]
+    content: str
+
+
+CardElement = Union[TextElement]
+
+
+# User Models
+class UserBase(SQLModel):
+    email: str = Field(unique=True, index=True)
+    is_active: bool = True
+
+
+class UserCreate(UserBase):
+    password: str
+
+
+class UserRead(UserBase):
+    id: int
+
+
+class User(UserBase, table=True):
     __tablename__ = "users"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    hashed_password: str
 
-    id = Column(Integer, primary_key=True, index=True)
-    email = Column(String, unique=True, index=True)
-    hashed_password = Column(String)
-    is_active = Column(Boolean, default=True)
-
-    decks = relationship("Deck", back_populates="owner")
+    decks: List["Deck"] = Relationship(back_populates="owner")
 
 
-class Deck(Base):
+# Deck Models
+class DeckBase(SQLModel):
+    name: str
+    slug: str = Field(index=True)
+
+
+class DeckCreate(DeckBase):
+    pass
+
+
+class DeckRead(DeckBase):
+    id: int
+    user_id: int
+
+
+class Deck(DeckBase, table=True):
     __tablename__ = "decks"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: Optional[int] = Field(default=None, foreign_key="users.id")
 
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String)
-    slug = Column(String, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"))
-
-    owner = relationship("User", back_populates="decks")
-    cards = relationship("Card", back_populates="deck")
+    owner: Optional[User] = Relationship(back_populates="decks")
+    cards: List["Card"] = Relationship(back_populates="deck")
 
 
-class Card(Base):
+# Card Models
+class CardBase(SQLModel):
+    front: List[CardElement] = Field(sa_column=Column(JSON))
+    back: List[CardElement] = Field(sa_column=Column(JSON))
+
+
+class CardCreate(CardBase):
+    pass
+
+
+class CardRead(CardBase):
+    id: int
+    deck_id: int
+
+
+class Card(CardBase, table=True):
     __tablename__ = "cards"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    deck_id: Optional[int] = Field(default=None, foreign_key="decks.id")
 
-    id = Column(Integer, primary_key=True, index=True)
-    deck_id = Column(Integer, ForeignKey("decks.id"))
-    front = Column(JSON)
-    back = Column(JSON)
-
-    deck = relationship("Deck", back_populates="cards")
+    deck: Optional[Deck] = Relationship(back_populates="cards")
