@@ -19,8 +19,12 @@ def get_users(db: Session, skip: int = 0, limit: int = 100):
 
 
 def create_user(db: Session, user: models.UserCreate):
-    fake_hashed_password = user.password + "notreallyhashed"
-    db_user = models.User(**user.model_dump(), hashed_password=fake_hashed_password)
+    fake_hashed_password = (
+        (user.password + "notreallyhashed") if user.password else None
+    )
+    db_user = models.User(
+        **user.model_dump(exclude={"password"}), hashed_password=fake_hashed_password
+    )
     db.add(db_user)
     db.commit()
     db.refresh(db_user)

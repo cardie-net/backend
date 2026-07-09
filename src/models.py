@@ -17,12 +17,13 @@ CardElement = Union[TextElement]
 
 # User Models
 class UserBase(SQLModel):
-    email: str = Field(unique=True, index=True)
+    email: Optional[str] = Field(default=None, unique=True, index=True)
     is_active: bool = True
+    is_guest: bool = Field(default=False)
 
 
 class UserCreate(UserBase):
-    password: str
+    password: Optional[str] = None
 
 
 class UserRead(UserBase):
@@ -32,7 +33,7 @@ class UserRead(UserBase):
 class User(UserBase, table=True):
     __tablename__ = "users"
     id: Optional[int] = Field(default=None, primary_key=True)
-    hashed_password: str
+    hashed_password: Optional[str] = None
 
     decks: List["Deck"] = Relationship(back_populates="owner")
 
