@@ -1,12 +1,15 @@
 from enum import Enum
 from typing import List, Literal, Optional, Union
 
+from fastapi_users import schemas
+from fastapi_users_db_sqlmodel import SQLModelBaseOAuthAccount, SQLModelBaseUserDB
 from pydantic import BaseModel
 from sqlalchemy import JSON, Column, UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
 
+# --- Card Element Types ---
 
-# Element types
+
 class TextElement(BaseModel):
     type: Literal["text"]
     content: str
@@ -15,30 +18,48 @@ class TextElement(BaseModel):
 CardElement = Union[TextElement]
 
 
-# User Models
-class UserBase(SQLModel):
-    email: Optional[str] = Field(default=None, unique=True, index=True)
-    is_active: bool = True
+# --- OAuth Account ---
+
+
+class OAuthAccount(SQLModelBaseOAuthAccount, table=True):
+    pass
+
+
+# --- User DB Model ---
+
+
+class User(SQLModelBaseUserDB, table=True):
+    __tablename__ = "user"
+
     is_guest: bool = Field(default=False)
 
-
-class UserCreate(UserBase):
-    password: Optional[str] = None
-
-
-class UserRead(UserBase):
-    id: int
-
-
-class User(UserBase, table=True):
-    __tablename__ = "users"
-    id: Optional[int] = Field(default=None, primary_key=True)
-    hashed_password: Optional[str] = None
-
-    decks: List["Deck"] = Relationship(back_populates="owner")
+    oauth_accounts: List[OAuthAccount] = Relationship(
+        sa_relationship_kwargs={"lazy": "joined", "cascade": "all, delete-orphan"}
+    )
+    decks: List["Deck"] = Relationship(
+        sa_relationship_kwargs={"lazy": "selectin", "cascade": "all, delete-orphan"},
+        back_populates="owner",
+    )
 
 
-# Deck Models
+# --- User Schemas (Pydantic, not table models) ---
+
+
+class UserRead(schemas.BaseUser[int]):
+    is_guest: bool
+
+
+class UserCreate(schemas.BaseUserCreate):
+    is_guest: bool = False
+
+
+class UserUpdate(schemas.BaseUserUpdate):
+    pass
+
+
+# --- Deck Models ---
+
+
 class PrivacyLevel(str, Enum):
     private = "private"
     unlisted = "unlisted"
@@ -65,13 +86,18 @@ class Deck(DeckBase, table=True):
     __table_args__ = (UniqueConstraint("user_id", "slug", name="uq_deck_user_slug"),)
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    user_id: Optional[int] = Field(default=None, foreign_key="users.id")
+    user_id: Optional[int] = Field(default=None, foreign_key="user.id")
 
-    owner: Optional[User] = Relationship(back_populates="decks")
-    cards: List["Card"] = Relationship(back_populates="deck")
+    owner: Optional["User"] = Relationship(back_populates="decks")
+    cards: List["Card"] = Relationship(
+        sa_relationship_kwargs={"lazy": "selectin", "cascade": "all, delete-orphan"},
+        back_populates="deck",
+    )
 
 
-# Card Models
+# --- Card Models ---
+
+
 class CardBase(SQLModel):
     front: List[CardElement] = Field(sa_column=Column(JSON))
     back: List[CardElement] = Field(sa_column=Column(JSON))

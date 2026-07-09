@@ -1,1 +1,1 @@
-# make src a package
+# src package
