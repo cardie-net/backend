@@ -15,8 +15,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="cardie.net API",
-    description="API documentation for cardie.net.",
+    title="Cardie API",
+    description="API documentation for the Cardie application.",
+    version="1.0.0",
     lifespan=lifespan,
 )
 
@@ -29,8 +30,8 @@ app.add_middleware(
 )
 
 # --- Auth routes ---
-app.include_router(create_auth_router(), prefix="/auth", tags=["auth"])
+app.include_router(create_auth_router(), prefix="/v1/auth", tags=["auth"])
 
 # --- App routes ---
-app.include_router(decks.router)
-app.include_router(cards.router)
+app.include_router(decks.router, prefix="/v1")
+app.include_router(cards.router, prefix="/v1")
