@@ -2,32 +2,23 @@ import uuid
 from typing import List, Union
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
 from .. import models
+from .folder import get_folder
 
 
 async def get_folder_items_recursive(
     db: AsyncSession, folder_id: uuid.UUID, requesting_user_id: uuid.UUID
 ) -> List[Union[models.Folder, models.Deck]]:
     # We need to fetch the initial folder to check permissions
-    statement = (
-        select(models.Folder)
-        .where(models.Folder.id == folder_id)
-        .options(
-            selectinload(models.Folder.child_folders),
-            selectinload(models.Folder.decks),
-        )
-    )
-    result = await db.execute(statement)
-    folder = result.scalars().first()
+    folder = await get_folder(db, folder_id=folder_id)
 
     if not folder:
         return None
 
     is_owner = folder.user_id == requesting_user_id
-    if not is_owner and folder.privacy == models.PrivacyLevel.private:
+    if not is_owner and folder.privacy == models.PrivacyLevel.PRIVATE:
         return None
 
     items = []
@@ -37,30 +28,21 @@ async def get_folder_items_recursive(
         # Add current folder's decks
         for d in current_folder.decks:
             if owner_access or d.privacy in (
-                models.PrivacyLevel.public,
-                models.PrivacyLevel.unlisted,
+                models.PrivacyLevel.PUBLIC,
+                models.PrivacyLevel.UNLISTED,
             ):
                 items.append(d)
 
         # Add current folder's child folders
         for f in current_folder.child_folders:
             if owner_access or f.privacy in (
-                models.PrivacyLevel.public,
-                models.PrivacyLevel.unlisted,
+                models.PrivacyLevel.PUBLIC,
+                models.PrivacyLevel.UNLISTED,
             ):
                 items.append(f)
 
                 # Fetch children of this child folder
-                stmt = (
-                    select(models.Folder)
-                    .where(models.Folder.id == f.id)
-                    .options(
-                        selectinload(models.Folder.child_folders),
-                        selectinload(models.Folder.decks),
-                    )
-                )
-                res = await db.execute(stmt)
-                full_f = res.scalars().first()
+                full_f = await get_folder(db, folder_id=f.id)
                 if full_f:
                     await fetch_children(full_f, owner_access)
 
@@ -86,14 +68,14 @@ async def get_user_items(
     items = []
     for f in folders:
         if is_owner or f.privacy in (
-            models.PrivacyLevel.public,
-            models.PrivacyLevel.unlisted,
+            models.PrivacyLevel.PUBLIC,
+            models.PrivacyLevel.UNLISTED,
         ):
             items.append(f)
     for d in decks:
         if is_owner or d.privacy in (
-            models.PrivacyLevel.public,
-            models.PrivacyLevel.unlisted,
+            models.PrivacyLevel.PUBLIC,
+            models.PrivacyLevel.UNLISTED,
         ):
             items.append(d)
 

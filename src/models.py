@@ -1,3 +1,4 @@
+import re
 import uuid
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Union
@@ -66,9 +67,9 @@ class UserUpdate(schemas.BaseUserUpdate):
 
 
 class PrivacyLevel(str, Enum):
-    private = "private"
-    unlisted = "unlisted"
-    public = "public"
+    PRIVATE = "private"
+    UNLISTED = "unlisted"
+    PUBLIC = "public"
 
 
 class ItemProperties(BaseModel):
@@ -82,15 +83,13 @@ class ItemProperties(BaseModel):
 class FolderBase(SQLModel):
     name: str = Field(max_length=80)
     slug: str = Field(index=True, max_length=80)
-    privacy: PrivacyLevel = Field(default=PrivacyLevel.private)
+    privacy: PrivacyLevel = Field(default=PrivacyLevel.PRIVATE)
     parent_id: Optional[uuid.UUID] = Field(default=None, foreign_key="folders.id")
     properties: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
 
     @field_validator("slug")
     @classmethod
     def validate_slug(cls, v: str) -> str:
-        import re
-
         if not re.match(r"^[a-zA-Z0-9_-]+$", v):
             raise ValueError("Invalid slug")
         return v
@@ -112,8 +111,6 @@ class FolderUpdate(BaseModel):
     def validate_slug(cls, v: Optional[str]) -> Optional[str]:
         if v is None:
             return v
-        import re
-
         if not re.match(r"^[a-zA-Z0-9_-]+$", v):
             raise ValueError("Invalid slug")
         return v
@@ -154,15 +151,13 @@ class Folder(FolderBase, table=True):
 class DeckBase(SQLModel):
     name: str = Field(max_length=80)
     slug: str = Field(index=True, max_length=80)
-    privacy: PrivacyLevel = Field(default=PrivacyLevel.private)
+    privacy: PrivacyLevel = Field(default=PrivacyLevel.PRIVATE)
     folder_id: Optional[uuid.UUID] = Field(default=None, foreign_key="folders.id")
     properties: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
 
     @field_validator("slug")
     @classmethod
     def validate_slug(cls, v: str) -> str:
-        import re
-
         if not re.match(r"^[a-zA-Z0-9_-]+$", v):
             raise ValueError("Invalid slug")
         return v
@@ -184,8 +179,6 @@ class DeckUpdate(BaseModel):
     def validate_slug(cls, v: Optional[str]) -> Optional[str]:
         if v is None:
             return v
-        import re
-
         if not re.match(r"^[a-zA-Z0-9_-]+$", v):
             raise ValueError("Invalid slug")
         return v

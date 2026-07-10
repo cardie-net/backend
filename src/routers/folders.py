@@ -27,11 +27,11 @@ async def create_folder(
 
     try:
         return await crud.create_folder_for_user(db=db, folder=folder, user_id=user.id)
-    except sqlalchemy.exc.IntegrityError:
+    except sqlalchemy.exc.IntegrityError as exc:
         await db.rollback()
         raise HTTPException(
             status_code=400, detail="Folder with this slug already exists"
-        )
+        ) from exc
 
 
 @router.get(
@@ -75,11 +75,11 @@ async def update_folder(
             db=db, folder_id=folder_id, folder_update=folder_update
         )
         return updated_folder
-    except sqlalchemy.exc.IntegrityError:
+    except sqlalchemy.exc.IntegrityError as exc:
         await db.rollback()
         raise HTTPException(
             status_code=400, detail="Folder with this slug already exists"
-        )
+        ) from exc
 
 
 @router.delete("/{folder_id}")

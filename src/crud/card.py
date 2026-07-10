@@ -17,7 +17,7 @@ async def get_cards_for_deck(db: AsyncSession, deck_id: uuid.UUID) -> List[model
     statement = (
         select(models.Card)
         .where(models.Card.deck_id == deck_id)
-        .order_by(models.Card.order.asc())
+        .order_by(models.Card.order.asc())  # pylint: disable=no-member
     )
     result = await db.execute(statement)
     return result.scalars().all()

@@ -1,7 +1,7 @@
 import uuid
-from typing import List
 
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
 from .. import models
@@ -28,9 +28,6 @@ async def create_folder_for_user(
     await db.commit()
     await db.refresh(db_folder)
     return db_folder
-
-
-from sqlalchemy.orm import selectinload
 
 
 async def get_folder(db: AsyncSession, folder_id: uuid.UUID):

@@ -1,5 +1,4 @@
 import uuid
-from typing import List
 
 import sqlalchemy.exc
 from fastapi import APIRouter, Depends, HTTPException
@@ -27,11 +26,11 @@ async def create_deck(
 
     try:
         return await crud.create_deck_for_user(db=db, deck=deck, user_id=user.id)
-    except sqlalchemy.exc.IntegrityError:
+    except sqlalchemy.exc.IntegrityError as exc:
         await db.rollback()
         raise HTTPException(
             status_code=400, detail="Deck with this slug already exists"
-        )
+        ) from exc
 
 
 @router.get("/{deck_id}", response_model=models.DeckRead)
@@ -43,7 +42,7 @@ async def get_deck(
     db_deck = await crud.get_deck(db, deck_id=deck_id)
     if not db_deck:
         raise HTTPException(status_code=404, detail="Deck not found")
-    if db_deck.user_id != user.id and db_deck.privacy == models.PrivacyLevel.private:
+    if db_deck.user_id != user.id and db_deck.privacy == models.PrivacyLevel.PRIVATE:
         raise HTTPException(status_code=403, detail="Not enough permissions")
     return db_deck
 
@@ -85,8 +84,8 @@ async def update_deck(
 
     try:
         return await crud.update_deck(db=db, db_deck=db_deck, deck_update=deck_update)
-    except sqlalchemy.exc.IntegrityError:
+    except sqlalchemy.exc.IntegrityError as exc:
         await db.rollback()
         raise HTTPException(
             status_code=400, detail="Deck with this slug already exists"
-        )
+        ) from exc

@@ -20,7 +20,7 @@ async def read_cards(
     deck = await crud.get_deck(db, deck_id=deck_id)
     if not deck:
         raise HTTPException(status_code=404, detail="Deck not found")
-    if deck.user_id != user.id and deck.privacy == models.PrivacyLevel.private:
+    if deck.user_id != user.id and deck.privacy == models.PrivacyLevel.PRIVATE:
         raise HTTPException(status_code=403, detail="Not enough permissions")
     return await crud.get_cards_for_deck(db, deck_id=deck_id)
 

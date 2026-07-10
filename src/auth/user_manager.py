@@ -1,5 +1,5 @@
 import uuid
-from typing import Optional, Union
+from typing import Optional
 
 from fastapi import Depends, Request
 from fastapi_users import BaseUserManager, UUIDIDMixin
@@ -9,7 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..config import settings
 from ..database import get_db
 from ..models import OAuthAccount, User
-from ..services.guest import transfer_guest_data
 
 
 class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):

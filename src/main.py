@@ -9,7 +9,7 @@ from .routers import cards, decks, folders, users
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(fastapi_app: FastAPI):
     await create_db_and_tables()
     yield
 

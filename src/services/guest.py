@@ -3,7 +3,7 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from ..models import Card, Deck
+from ..models import Deck
 
 
 async def transfer_guest_data(

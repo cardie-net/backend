@@ -2,11 +2,9 @@ import uuid
 
 from fastapi import APIRouter, Depends
 from fastapi_users import FastAPIUsers
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import settings
-from ..database import get_db
-from ..models import User, UserCreate, UserRead, UserUpdate
+from ..models import User, UserCreate, UserRead
 from .backend import auth_backend, get_jwt_strategy
 from .oauth import google_oauth_client
 from .user_manager import UserManager, get_user_manager
