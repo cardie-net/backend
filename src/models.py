@@ -78,7 +78,7 @@ class FolderBase(SQLModel):
     name: str = Field(max_length=80)
     slug: str = Field(index=True, max_length=80)
     privacy: PrivacyLevel = Field(default=PrivacyLevel.private)
-    parent_id: Optional[int] = Field(default=None, foreign_key="folders.id")
+    parent_id: Optional[uuid.UUID] = Field(default=None, foreign_key="folders.id")
 
     @field_validator("slug")
     @classmethod
@@ -95,7 +95,7 @@ class FolderCreate(FolderBase):
 
 
 class FolderRead(FolderBase):
-    id: int
+    id: uuid.UUID
     user_id: uuid.UUID
 
 
@@ -103,7 +103,7 @@ class Folder(FolderBase, table=True):
     __tablename__ = "folders"
     __table_args__ = (UniqueConstraint("user_id", "slug", name="uq_folder_user_slug"),)
 
-    id: Optional[int] = Field(default=None, primary_key=True)
+    id: Optional[uuid.UUID] = Field(default_factory=uuid.uuid4, primary_key=True)
     user_id: Optional[uuid.UUID] = Field(default=None, foreign_key="user.id")
 
     owner: Optional["User"] = Relationship(back_populates="folders")
@@ -129,7 +129,7 @@ class DeckBase(SQLModel):
     name: str = Field(max_length=80)
     slug: str = Field(index=True, max_length=80)
     privacy: PrivacyLevel = Field(default=PrivacyLevel.private)
-    folder_id: Optional[int] = Field(default=None, foreign_key="folders.id")
+    folder_id: Optional[uuid.UUID] = Field(default=None, foreign_key="folders.id")
 
     @field_validator("slug")
     @classmethod
@@ -146,16 +146,16 @@ class DeckCreate(DeckBase):
 
 
 class DeckRead(DeckBase):
-    id: int
+    id: uuid.UUID
     user_id: uuid.UUID
-    folder_id: Optional[int] = None
+    folder_id: Optional[uuid.UUID] = None
 
 
 class Deck(DeckBase, table=True):
     __tablename__ = "decks"
     __table_args__ = (UniqueConstraint("user_id", "slug", name="uq_deck_user_slug"),)
 
-    id: Optional[int] = Field(default=None, primary_key=True)
+    id: Optional[uuid.UUID] = Field(default_factory=uuid.uuid4, primary_key=True)
     user_id: Optional[uuid.UUID] = Field(default=None, foreign_key="user.id")
 
     owner: Optional["User"] = Relationship(back_populates="decks")
@@ -179,14 +179,14 @@ class CardCreate(CardBase):
 
 
 class CardRead(CardBase):
-    id: int
-    deck_id: int
+    id: uuid.UUID
+    deck_id: uuid.UUID
 
 
 class Card(CardBase, table=True):
     __tablename__ = "cards"
-    id: Optional[int] = Field(default=None, primary_key=True)
-    deck_id: Optional[int] = Field(default=None, foreign_key="decks.id")
+    id: Optional[uuid.UUID] = Field(default_factory=uuid.uuid4, primary_key=True)
+    deck_id: Optional[uuid.UUID] = Field(default=None, foreign_key="decks.id")
 
     deck: Optional[Deck] = Relationship(back_populates="cards")
 

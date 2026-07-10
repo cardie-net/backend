@@ -1,16 +1,20 @@
+import uuid
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from .. import models
 
 
-async def get_cards_for_deck(db: AsyncSession, deck_id: int):
+async def get_cards_for_deck(db: AsyncSession, deck_id: uuid.UUID):
     statement = select(models.Card).where(models.Card.deck_id == deck_id)
     result = await db.execute(statement)
     return result.scalars().all()
 
 
-async def create_card_for_deck(db: AsyncSession, card: models.CardCreate, deck_id: int):
+async def create_card_for_deck(
+    db: AsyncSession, card: models.CardCreate, deck_id: uuid.UUID
+):
     db_card = models.Card(**card.model_dump(), deck_id=deck_id)
     db.add(db_card)
     await db.commit()

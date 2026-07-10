@@ -91,7 +91,7 @@ async def test_create_folder_non_existent_parent(
             "name": "Valid Name",
             "slug": "valid-slug",
             "privacy": "public",
-            "parent_id": 999999,
+            "parent_id": "00000000-0000-0000-0000-000000999999",
         },
         headers={"Authorization": f"Bearer {guest_token1}"},
     )

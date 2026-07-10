@@ -116,7 +116,7 @@ async def test_create_deck_non_existent_folder(
             "name": "Valid Name",
             "slug": "valid-slug",
             "privacy": "private",
-            "folder_id": 999999,
+            "folder_id": "00000000-0000-0000-0000-000000999999",
         },
         headers={"Authorization": f"Bearer {guest_token}"},
     )

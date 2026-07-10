@@ -1,3 +1,5 @@
+import uuid
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -5,8 +7,8 @@ from ..models import Card, Deck
 
 
 async def transfer_guest_data(
-    guest_user_id: int,
-    target_user_id: int,
+    guest_user_id: uuid.UUID,
+    target_user_id: uuid.UUID,
     session: AsyncSession,
 ) -> int:
     """Transfer all decks (and their cards) from a guest user to the target user.

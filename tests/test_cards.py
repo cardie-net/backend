@@ -72,7 +72,7 @@ async def test_create_card_non_existent_deck(
     async_client: AsyncClient, guest_token1: str
 ):
     response = await async_client.post(
-        "/v1/decks/999/cards/",
+        "/v1/decks/00000000-0000-0000-0000-000000000999/cards/",
         json={
             "front": [{"type": "text", "content": "Front"}],
             "back": [{"type": "text", "content": "Back"}],
@@ -131,7 +131,7 @@ async def test_read_cards_non_existent_deck(
     async_client: AsyncClient, guest_token1: str
 ):
     response = await async_client.get(
-        "/v1/decks/999/cards/",
+        "/v1/decks/00000000-0000-0000-0000-000000000999/cards/",
         headers={"Authorization": f"Bearer {guest_token1}"},
     )
     assert response.status_code == 404

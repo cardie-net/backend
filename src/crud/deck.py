@@ -29,5 +29,5 @@ async def create_deck_for_user(
     return db_deck
 
 
-async def get_deck(db: AsyncSession, deck_id: int):
+async def get_deck(db: AsyncSession, deck_id: uuid.UUID):
     return await db.get(models.Deck, deck_id)

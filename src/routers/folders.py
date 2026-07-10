@@ -1,3 +1,4 @@
+import uuid
 from typing import List, Union
 
 import sqlalchemy.exc
@@ -37,7 +38,7 @@ async def create_folder(
     "/{folder_id}/items", response_model=List[Union[models.FolderRead, models.DeckRead]]
 )
 async def get_folder_items(
-    folder_id: int,
+    folder_id: uuid.UUID,
     user: models.User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):

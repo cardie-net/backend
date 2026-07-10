@@ -33,7 +33,7 @@ async def create_folder_for_user(
 from sqlalchemy.orm import selectinload
 
 
-async def get_folder(db: AsyncSession, folder_id: int):
+async def get_folder(db: AsyncSession, folder_id: uuid.UUID):
     # Using select with selectinload for child_folders and decks
     statement = (
         select(models.Folder)

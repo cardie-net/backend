@@ -1,3 +1,4 @@
+import uuid
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -12,7 +13,7 @@ router = APIRouter(prefix="/decks/{deck_id}/cards", tags=["cards"])
 
 @router.get("/", response_model=List[models.CardRead])
 async def read_cards(
-    deck_id: int,
+    deck_id: uuid.UUID,
     user: models.User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -26,7 +27,7 @@ async def read_cards(
 
 @router.post("/", response_model=models.CardRead)
 async def create_card(
-    deck_id: int,
+    deck_id: uuid.UUID,
     card: models.CardCreate,
     user: models.User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),

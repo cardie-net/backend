@@ -9,7 +9,7 @@ from .. import models
 
 
 async def get_folder_items_recursive(
-    db: AsyncSession, folder_id: int, requesting_user_id: uuid.UUID
+    db: AsyncSession, folder_id: uuid.UUID, requesting_user_id: uuid.UUID
 ) -> List[Union[models.Folder, models.Deck]]:
     # We need to fetch the initial folder to check permissions
     statement = (
