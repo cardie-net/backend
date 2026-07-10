@@ -14,7 +14,11 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(
+    title="cardie.net API",
+    description="API documentation for cardie.net.",
+    lifespan=lifespan,
+)
 
 app.add_middleware(
     CORSMiddleware,
