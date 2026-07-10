@@ -4,15 +4,8 @@ from sqlmodel import select
 from .. import models
 
 
-async def get_cards_for_deck(
-    db: AsyncSession, deck_id: int, skip: int = 0, limit: int = 100
-):
-    statement = (
-        select(models.Card)
-        .where(models.Card.deck_id == deck_id)
-        .offset(skip)
-        .limit(limit)
-    )
+async def get_cards_for_deck(db: AsyncSession, deck_id: int):
+    statement = select(models.Card).where(models.Card.deck_id == deck_id)
     result = await db.execute(statement)
     return result.scalars().all()
 

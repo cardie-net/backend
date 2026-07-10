@@ -13,8 +13,6 @@ router = APIRouter(prefix="/decks/{deck_id}/cards", tags=["cards"])
 @router.get("/", response_model=List[models.CardRead])
 async def read_cards(
     deck_id: int,
-    skip: int = 0,
-    limit: int = 100,
     user: models.User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -23,7 +21,7 @@ async def read_cards(
         raise HTTPException(status_code=404, detail="Deck not found")
     if deck.user_id != user.id and deck.privacy == models.PrivacyLevel.private:
         raise HTTPException(status_code=403, detail="Not enough permissions")
-    return await crud.get_cards_for_deck(db, deck_id=deck_id, skip=skip, limit=limit)
+    return await crud.get_cards_for_deck(db, deck_id=deck_id)
 
 
 @router.post("/", response_model=models.CardRead)
