@@ -13,7 +13,13 @@ from .deck import (
     get_decks_for_user,
     update_deck,
 )
-from .folder import create_folder_for_user, get_folder, get_folders_for_user
+from .folder import (
+    create_folder_for_user,
+    delete_folder,
+    get_folder,
+    get_folders_for_user,
+    update_folder,
+)
 from .items import get_folder_items_recursive, get_user_items
 
 __all__ = [
@@ -29,6 +35,8 @@ __all__ = [
     "create_folder_for_user",
     "get_folder",
     "get_folders_for_user",
+    "update_folder",
+    "delete_folder",
     "get_folder_items_recursive",
     "get_user_items",
     "delete_deck",

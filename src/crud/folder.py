@@ -45,3 +45,29 @@ async def get_folder(db: AsyncSession, folder_id: uuid.UUID):
     )
     result = await db.execute(statement)
     return result.scalars().first()
+
+
+async def update_folder(
+    db: AsyncSession, folder_id: uuid.UUID, folder_update: models.FolderUpdate
+):
+    db_folder = await get_folder(db, folder_id=folder_id)
+    if not db_folder:
+        return None
+
+    update_data = folder_update.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(db_folder, key, value)
+
+    db.add(db_folder)
+    await db.commit()
+    await db.refresh(db_folder)
+    return db_folder
+
+
+async def delete_folder(db: AsyncSession, folder_id: uuid.UUID):
+    db_folder = await get_folder(db, folder_id=folder_id)
+    if not db_folder:
+        return False
+    await db.delete(db_folder)
+    await db.commit()
+    return True

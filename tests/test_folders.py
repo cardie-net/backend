@@ -126,3 +126,190 @@ async def test_create_folder_not_owned_parent(
         headers={"Authorization": f"Bearer {guest_token1}"},
     )
     assert response.status_code in (403, 404, 422)
+
+
+@pytest.mark.asyncio
+async def test_delete_folder_success(async_client: AsyncClient, guest_token1: str):
+    # Create folder
+    create_resp = await async_client.post(
+        "/v1/folders/",
+        json={"name": "To Delete", "slug": "to-delete", "privacy": "public"},
+        headers={"Authorization": f"Bearer {guest_token1}"},
+    )
+    folder_id = create_resp.json()["id"]
+
+    # Delete folder
+    delete_resp = await async_client.delete(
+        f"/v1/folders/{folder_id}",
+        headers={"Authorization": f"Bearer {guest_token1}"},
+    )
+    assert delete_resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_delete_folder_not_owned(
+    async_client: AsyncClient, guest_token1: str, guest_token2: str
+):
+    # Create folder with guest_token1
+    create_resp = await async_client.post(
+        "/v1/folders/",
+        json={"name": "Not Yours", "slug": "not-yours", "privacy": "public"},
+        headers={"Authorization": f"Bearer {guest_token1}"},
+    )
+    folder_id = create_resp.json()["id"]
+
+    # Try to delete with guest_token2
+    delete_resp = await async_client.delete(
+        f"/v1/folders/{folder_id}",
+        headers={"Authorization": f"Bearer {guest_token2}"},
+    )
+    assert delete_resp.status_code in (403, 404)
+
+
+@pytest.mark.asyncio
+async def test_delete_folder_not_found(async_client: AsyncClient, guest_token1: str):
+    delete_resp = await async_client.delete(
+        "/v1/folders/00000000-0000-0000-0000-000000999999",
+        headers={"Authorization": f"Bearer {guest_token1}"},
+    )
+    assert delete_resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_patch_folder_success(async_client: AsyncClient, guest_token1: str):
+    # Create folder
+    create_resp = await async_client.post(
+        "/v1/folders/",
+        json={"name": "Old Name", "slug": "old-slug", "privacy": "public"},
+        headers={"Authorization": f"Bearer {guest_token1}"},
+    )
+    folder_id = create_resp.json()["id"]
+
+    # Patch folder
+    patch_resp = await async_client.patch(
+        f"/v1/folders/{folder_id}",
+        json={"name": "New Name", "slug": "new-slug", "privacy": "private"},
+        headers={"Authorization": f"Bearer {guest_token1}"},
+    )
+    assert patch_resp.status_code == 200
+    data = patch_resp.json()
+    assert data["name"] == "New Name"
+    assert data["slug"] == "new-slug"
+    assert data["privacy"] == "private"
+
+
+@pytest.mark.asyncio
+async def test_patch_folder_parent_id(async_client: AsyncClient, guest_token1: str):
+    # Create parent folder
+    parent_resp = await async_client.post(
+        "/v1/folders/",
+        json={"name": "Parent", "slug": "parent", "privacy": "public"},
+        headers={"Authorization": f"Bearer {guest_token1}"},
+    )
+    parent_id = parent_resp.json()["id"]
+
+    # Create child folder
+    child_resp = await async_client.post(
+        "/v1/folders/",
+        json={"name": "Child", "slug": "child", "privacy": "public"},
+        headers={"Authorization": f"Bearer {guest_token1}"},
+    )
+    child_id = child_resp.json()["id"]
+
+    # Patch child's parent_id
+    patch_resp = await async_client.patch(
+        f"/v1/folders/{child_id}",
+        json={"parent_id": parent_id},
+        headers={"Authorization": f"Bearer {guest_token1}"},
+    )
+    assert patch_resp.status_code == 200
+    assert patch_resp.json()["parent_id"] == parent_id
+
+
+@pytest.mark.asyncio
+async def test_patch_folder_not_owned(
+    async_client: AsyncClient, guest_token1: str, guest_token2: str
+):
+    # Create folder with guest_token1
+    create_resp = await async_client.post(
+        "/v1/folders/",
+        json={"name": "Not Yours", "slug": "not-yours", "privacy": "public"},
+        headers={"Authorization": f"Bearer {guest_token1}"},
+    )
+    folder_id = create_resp.json()["id"]
+
+    # Try to patch with guest_token2
+    patch_resp = await async_client.patch(
+        f"/v1/folders/{folder_id}",
+        json={"name": "Hacked Name"},
+        headers={"Authorization": f"Bearer {guest_token2}"},
+    )
+    assert patch_resp.status_code in (403, 404)
+
+
+@pytest.mark.asyncio
+async def test_patch_folder_not_found(async_client: AsyncClient, guest_token1: str):
+    patch_resp = await async_client.patch(
+        "/v1/folders/00000000-0000-0000-0000-000000999999",
+        json={"name": "New Name"},
+        headers={"Authorization": f"Bearer {guest_token1}"},
+    )
+    assert patch_resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_folder_cascades_decks_and_cards(
+    async_client: AsyncClient, guest_token1: str, async_session
+):
+    import uuid
+
+    from src import models
+
+    unique_slug = f"folder-cascades-{uuid.uuid4().hex[:8]}"
+
+    # Create folder
+    folder_resp = await async_client.post(
+        "/v1/folders/",
+        json={"name": "Folder for Cascades", "slug": unique_slug, "privacy": "private"},
+        headers={"Authorization": f"Bearer {guest_token1}"},
+    )
+    folder_id = folder_resp.json()["id"]
+
+    # Create deck in folder
+    deck_resp = await async_client.post(
+        "/v1/decks/",
+        json={
+            "name": "Deck in Folder",
+            "slug": f"deck-{unique_slug}",
+            "privacy": "private",
+            "folder_id": folder_id,
+        },
+        headers={"Authorization": f"Bearer {guest_token1}"},
+    )
+    deck_id = deck_resp.json()["id"]
+
+    # Create card in deck
+    card_resp = await async_client.post(
+        f"/v1/decks/{deck_id}/cards/",
+        json={
+            "front": [{"type": "text", "content": "front"}],
+            "back": [{"type": "text", "content": "back"}],
+        },
+        headers={"Authorization": f"Bearer {guest_token1}"},
+    )
+    card_id = card_resp.json()["id"]
+
+    # Delete folder
+    delete_resp = await async_client.delete(
+        f"/v1/folders/{folder_id}",
+        headers={"Authorization": f"Bearer {guest_token1}"},
+    )
+    assert delete_resp.status_code == 200
+
+    # Verify deck is deleted
+    deck = await async_session.get(models.Deck, uuid.UUID(deck_id))
+    assert deck is None
+
+    # Verify card is deleted
+    card = await async_session.get(models.Card, uuid.UUID(card_id))
+    assert card is None
