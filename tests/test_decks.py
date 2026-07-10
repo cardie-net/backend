@@ -151,3 +151,259 @@ async def test_create_deck_not_owned_folder(
         headers={"Authorization": f"Bearer {guest_token}"},
     )
     assert response.status_code in (403, 404, 422)
+
+
+@pytest.mark.asyncio
+async def test_delete_deck(async_client: AsyncClient, guest_token: str):
+    # Create deck
+    create_resp = await async_client.post(
+        "/v1/decks/",
+        json={"name": "Deck to Delete", "slug": "deck-to-delete", "privacy": "private"},
+        headers={"Authorization": f"Bearer {guest_token}"},
+    )
+    deck_id = create_resp.json()["id"]
+
+    # Delete deck
+    delete_resp = await async_client.delete(
+        f"/v1/decks/{deck_id}",
+        headers={"Authorization": f"Bearer {guest_token}"},
+    )
+    assert delete_resp.status_code == 204
+
+    # Verify deck is deleted
+    get_resp = await async_client.get(
+        f"/v1/decks/{deck_id}",
+        headers={"Authorization": f"Bearer {guest_token}"},
+    )
+    assert get_resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_deck_not_owned(
+    async_client: AsyncClient, guest_token: str, guest_token2: str
+):
+    # Create deck with guest_token
+    create_resp = await async_client.post(
+        "/v1/decks/",
+        json={"name": "User 1 Deck", "slug": "user-1-deck", "privacy": "private"},
+        headers={"Authorization": f"Bearer {guest_token}"},
+    )
+    deck_id = create_resp.json()["id"]
+
+    # Try to delete deck with guest_token2
+    delete_resp = await async_client.delete(
+        f"/v1/decks/{deck_id}",
+        headers={"Authorization": f"Bearer {guest_token2}"},
+    )
+    assert delete_resp.status_code in (403, 404)
+
+
+@pytest.mark.asyncio
+async def test_delete_deck_not_found(async_client: AsyncClient, guest_token: str):
+    delete_resp = await async_client.delete(
+        "/v1/decks/00000000-0000-0000-0000-000000999999",
+        headers={"Authorization": f"Bearer {guest_token}"},
+    )
+    assert delete_resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_patch_deck(async_client: AsyncClient, guest_token: str):
+    # Create deck
+    create_resp = await async_client.post(
+        "/v1/decks/",
+        json={"name": "Original Deck", "slug": "original-deck", "privacy": "private"},
+        headers={"Authorization": f"Bearer {guest_token}"},
+    )
+    deck_id = create_resp.json()["id"]
+
+    # Patch deck
+    patch_resp = await async_client.patch(
+        f"/v1/decks/{deck_id}",
+        json={"name": "Patched Deck", "slug": "patched-deck", "privacy": "public"},
+        headers={"Authorization": f"Bearer {guest_token}"},
+    )
+    assert patch_resp.status_code == 200
+    data = patch_resp.json()
+    assert data["name"] == "Patched Deck"
+    assert data["slug"] == "patched-deck"
+    assert data["privacy"] == "public"
+
+
+@pytest.mark.asyncio
+async def test_patch_deck_not_owned(
+    async_client: AsyncClient, guest_token: str, guest_token2: str
+):
+    # Create deck with guest_token
+    create_resp = await async_client.post(
+        "/v1/decks/",
+        json={"name": "User 1 Deck", "slug": "user-1-deck-patch", "privacy": "private"},
+        headers={"Authorization": f"Bearer {guest_token}"},
+    )
+    deck_id = create_resp.json()["id"]
+
+    # Try to patch deck with guest_token2
+    patch_resp = await async_client.patch(
+        f"/v1/decks/{deck_id}",
+        json={"name": "Hacked Deck"},
+        headers={"Authorization": f"Bearer {guest_token2}"},
+    )
+    assert patch_resp.status_code in (403, 404)
+
+
+@pytest.mark.asyncio
+async def test_patch_deck_not_found(async_client: AsyncClient, guest_token: str):
+    patch_resp = await async_client.patch(
+        "/v1/decks/00000000-0000-0000-0000-000000999999",
+        json={"name": "Ghost Deck"},
+        headers={"Authorization": f"Bearer {guest_token}"},
+    )
+    assert patch_resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_patch_deck_folder_id(async_client: AsyncClient, guest_token: str):
+    # Create folder
+    folder_resp = await async_client.post(
+        "/v1/folders/",
+        json={"name": "Folder 1", "slug": "folder-1", "privacy": "private"},
+        headers={"Authorization": f"Bearer {guest_token}"},
+    )
+    folder_id = folder_resp.json()["id"]
+
+    # Create deck
+    create_resp = await async_client.post(
+        "/v1/decks/",
+        json={"name": "Deck 1", "slug": "deck-1-folder", "privacy": "private"},
+        headers={"Authorization": f"Bearer {guest_token}"},
+    )
+    deck_id = create_resp.json()["id"]
+
+    # Patch deck folder
+    patch_resp = await async_client.patch(
+        f"/v1/decks/{deck_id}",
+        json={"folder_id": folder_id},
+        headers={"Authorization": f"Bearer {guest_token}"},
+    )
+    assert patch_resp.status_code == 200
+    assert patch_resp.json()["folder_id"] == folder_id
+
+
+@pytest.mark.asyncio
+async def test_patch_deck_non_unique_slug(async_client: AsyncClient, guest_token: str):
+    # Create deck 1
+    await async_client.post(
+        "/v1/decks/",
+        json={"name": "Deck A", "slug": "deck-a", "privacy": "private"},
+        headers={"Authorization": f"Bearer {guest_token}"},
+    )
+
+    # Create deck 2
+    create_resp = await async_client.post(
+        "/v1/decks/",
+        json={"name": "Deck B", "slug": "deck-b", "privacy": "private"},
+        headers={"Authorization": f"Bearer {guest_token}"},
+    )
+    deck2_id = create_resp.json()["id"]
+
+    # Patch deck 2 with deck A's slug
+    patch_resp = await async_client.patch(
+        f"/v1/decks/{deck2_id}",
+        json={"slug": "deck-a"},
+        headers={"Authorization": f"Bearer {guest_token}"},
+    )
+    assert patch_resp.status_code == 400
+
+
+@pytest.mark.parametrize(
+    "invalid_slug",
+    [
+        "invalid slug",
+        "invalid/slug",
+        "invalid#slug",
+        "invalid?slug",
+        "invalid&slug",
+        "invalid%slug",
+        "invalid\\slug",
+        "invalid@slug",
+        "invalid:slug",
+        "",
+        "A" * 81,
+    ],
+)
+@pytest.mark.asyncio
+async def test_patch_deck_invalid_slug(
+    async_client: AsyncClient, guest_token: str, invalid_slug: str
+):
+    # Create deck
+    create_resp = await async_client.post(
+        "/v1/decks/",
+        json={
+            "name": "Valid Name",
+            "slug": "valid-slug-for-patch",
+            "privacy": "private",
+        },
+        headers={"Authorization": f"Bearer {guest_token}"},
+    )
+
+    # We might fail to create if the slug is taken from previous tests, let's use a unique slug just in case
+    import uuid
+
+    unique_slug = f"valid-slug-{uuid.uuid4().hex[:8]}"
+    if create_resp.status_code != 200:
+        create_resp = await async_client.post(
+            "/v1/decks/",
+            json={"name": "Valid Name", "slug": unique_slug, "privacy": "private"},
+            headers={"Authorization": f"Bearer {guest_token}"},
+        )
+
+    deck_id = create_resp.json()["id"]
+
+    # Patch with invalid slug
+    patch_resp = await async_client.patch(
+        f"/v1/decks/{deck_id}",
+        json={"slug": invalid_slug},
+        headers={"Authorization": f"Bearer {guest_token}"},
+    )
+    assert patch_resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_delete_deck_cascades_cards(
+    async_client: AsyncClient, guest_token: str, async_session
+):
+    import uuid
+
+    from src import models
+
+    unique_slug = f"deck-with-cards-{uuid.uuid4().hex[:8]}"
+
+    # Create deck
+    create_resp = await async_client.post(
+        "/v1/decks/",
+        json={"name": "Deck with Cards", "slug": unique_slug, "privacy": "private"},
+        headers={"Authorization": f"Bearer {guest_token}"},
+    )
+    deck_id = create_resp.json()["id"]
+
+    # Create a card in the deck
+    card_resp = await async_client.post(
+        f"/v1/decks/{deck_id}/cards/",
+        json={
+            "front": [{"type": "text", "content": "front"}],
+            "back": [{"type": "text", "content": "back"}],
+        },
+        headers={"Authorization": f"Bearer {guest_token}"},
+    )
+    card_id = card_resp.json()["id"]
+
+    # Delete the deck
+    delete_resp = await async_client.delete(
+        f"/v1/decks/{deck_id}",
+        headers={"Authorization": f"Bearer {guest_token}"},
+    )
+    assert delete_resp.status_code == 204
+
+    # Verify the card is also deleted from the database
+    card = await async_session.get(models.Card, uuid.UUID(card_id))
+    assert card is None

@@ -31,3 +31,20 @@ async def create_deck_for_user(
 
 async def get_deck(db: AsyncSession, deck_id: uuid.UUID):
     return await db.get(models.Deck, deck_id)
+
+
+async def delete_deck(db: AsyncSession, db_deck: models.Deck):
+    await db.delete(db_deck)
+    await db.commit()
+
+
+async def update_deck(
+    db: AsyncSession, db_deck: models.Deck, deck_update: models.DeckUpdate
+):
+    update_data = deck_update.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(db_deck, key, value)
+    db.add(db_deck)
+    await db.commit()
+    await db.refresh(db_deck)
+    return db_deck

@@ -6,7 +6,13 @@ from .card import (
     reorder_cards,
     update_card,
 )
-from .deck import create_deck_for_user, get_deck, get_decks_for_user
+from .deck import (
+    create_deck_for_user,
+    delete_deck,
+    get_deck,
+    get_decks_for_user,
+    update_deck,
+)
 from .folder import create_folder_for_user, get_folder, get_folders_for_user
 from .items import get_folder_items_recursive, get_user_items
 
@@ -25,4 +31,6 @@ __all__ = [
     "get_folders_for_user",
     "get_folder_items_recursive",
     "get_user_items",
+    "delete_deck",
+    "update_deck",
 ]

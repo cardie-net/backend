@@ -145,6 +145,24 @@ class DeckCreate(DeckBase):
     pass
 
 
+class DeckUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, max_length=80)
+    slug: Optional[str] = Field(default=None, max_length=80)
+    privacy: Optional[PrivacyLevel] = None
+    folder_id: Optional[uuid.UUID] = None
+
+    @field_validator("slug")
+    @classmethod
+    def validate_slug(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        import re
+
+        if not re.match(r"^[a-zA-Z0-9_-]+$", v):
+            raise ValueError("Invalid slug")
+        return v
+
+
 class DeckRead(DeckBase):
     id: uuid.UUID
     user_id: uuid.UUID
