@@ -172,10 +172,20 @@ class Deck(DeckBase, table=True):
 class CardBase(SQLModel):
     front: List[CardElement] = Field(sa_column=Column(JSON))
     back: List[CardElement] = Field(sa_column=Column(JSON))
+    order: int = Field(default=0)
 
 
 class CardCreate(CardBase):
     pass
+
+
+class CardUpdate(BaseModel):
+    front: Optional[List[CardElement]] = None
+    back: Optional[List[CardElement]] = None
+
+
+class CardReorder(BaseModel):
+    card_ids: List[uuid.UUID]
 
 
 class CardRead(CardBase):
