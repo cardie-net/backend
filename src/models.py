@@ -120,6 +120,7 @@ class FolderRead(FolderBase):
     id: uuid.UUID
     user_id: uuid.UUID
     properties: Optional[ItemProperties] = None
+    type: Literal["folder"]
 
 
 class Folder(FolderBase, table=True):
@@ -143,6 +144,10 @@ class Folder(FolderBase, table=True):
         back_populates="parent",
         sa_relationship_kwargs={"lazy": "selectin", "cascade": "all, delete-orphan"},
     )
+
+    @property
+    def type(self) -> str:
+        return "folder"
 
 
 # --- Deck Models ---
@@ -189,6 +194,7 @@ class DeckRead(DeckBase):
     user_id: uuid.UUID
     folder_id: Optional[uuid.UUID] = None
     properties: Optional[ItemProperties] = None
+    type: Literal["deck"]
 
 
 class Deck(DeckBase, table=True):
@@ -204,6 +210,10 @@ class Deck(DeckBase, table=True):
         sa_relationship_kwargs={"lazy": "selectin", "cascade": "all, delete-orphan"},
         back_populates="deck",
     )
+
+    @property
+    def type(self) -> str:
+        return "deck"
 
 
 # --- Card Models ---

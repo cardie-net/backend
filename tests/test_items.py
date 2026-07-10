@@ -110,6 +110,12 @@ async def test_get_folder_items(
     assert isinstance(data, list)
     assert len(data) == 4  # child folder, deck, unlisted deck, private deck (nested)
 
+    child_folder_item = next(item for item in data if item["name"] == "Child Folder")
+    assert child_folder_item["type"] == "folder"
+
+    deck_item = next(item for item in data if item["name"] == "Deck in Folder")
+    assert deck_item["type"] == "deck"
+
     # Retrieve folder items for guest (another user)
     get_resp_guest = await async_client.get(
         f"/v1/folders/{folder_id}/items",
@@ -155,6 +161,11 @@ async def test_get_user_items(async_client: AsyncClient, registered_user: dict):
     names = [item["name"] for item in data]
     assert "User Folder" in names
     assert "User Deck" in names
+
+    folder_item = next(item for item in data if item["name"] == "User Folder")
+    assert folder_item["type"] == "folder"
+    deck_item = next(item for item in data if item["name"] == "User Deck")
+    assert deck_item["type"] == "deck"
 
 
 @pytest.mark.asyncio
