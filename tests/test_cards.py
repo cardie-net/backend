@@ -135,3 +135,47 @@ async def test_read_cards_non_existent_deck(
         headers={"Authorization": f"Bearer {guest_token1}"},
     )
     assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_create_card_invalid_front_data(
+    async_client: AsyncClient, guest_token1: str, private_deck_id: int
+):
+    response = await async_client.post(
+        f"/v1/decks/{private_deck_id}/cards/",
+        json={
+            "front": "this should be a list",
+            "back": [{"type": "text", "content": "Back"}],
+        },
+        headers={"Authorization": f"Bearer {guest_token1}"},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_card_invalid_back_data(
+    async_client: AsyncClient, guest_token1: str, private_deck_id: int
+):
+    response = await async_client.post(
+        f"/v1/decks/{private_deck_id}/cards/",
+        json={
+            "front": [{"type": "text", "content": "Front"}],
+            "back": "this should be a list",
+        },
+        headers={"Authorization": f"Bearer {guest_token1}"},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_card_missing_fields(
+    async_client: AsyncClient, guest_token1: str, private_deck_id: int
+):
+    response = await async_client.post(
+        f"/v1/decks/{private_deck_id}/cards/",
+        json={
+            "front": [{"type": "text", "content": "Front"}],
+        },
+        headers={"Authorization": f"Bearer {guest_token1}"},
+    )
+    assert response.status_code == 422

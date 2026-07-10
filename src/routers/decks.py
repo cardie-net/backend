@@ -27,6 +27,13 @@ async def create_deck(
     user: models.User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
+    if deck.folder_id is not None:
+        folder = await crud.get_folder(db, folder_id=deck.folder_id)
+        if not folder:
+            raise HTTPException(status_code=404, detail="Folder not found")
+        if folder.user_id != user.id:
+            raise HTTPException(status_code=403, detail="Not enough permissions")
+
     try:
         return await crud.create_deck_for_user(db=db, deck=deck, user_id=user.id)
     except sqlalchemy.exc.IntegrityError:

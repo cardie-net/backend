@@ -17,6 +17,13 @@ async def create_folder(
     user: models.User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
+    if folder.parent_id is not None:
+        parent_folder = await crud.get_folder(db, folder_id=folder.parent_id)
+        if not parent_folder:
+            raise HTTPException(status_code=404, detail="Parent folder not found")
+        if parent_folder.user_id != user.id:
+            raise HTTPException(status_code=403, detail="Not enough permissions")
+
     try:
         return await crud.create_folder_for_user(db=db, folder=folder, user_id=user.id)
     except sqlalchemy.exc.IntegrityError:

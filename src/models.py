@@ -4,7 +4,7 @@ from typing import List, Literal, Optional, Union
 
 from fastapi_users import schemas
 from fastapi_users_db_sqlmodel import SQLModelBaseOAuthAccount, SQLModelBaseUserDB
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import JSON, Column, UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -75,10 +75,19 @@ class PrivacyLevel(str, Enum):
 
 
 class FolderBase(SQLModel):
-    name: str
-    slug: str = Field(index=True)
+    name: str = Field(max_length=80)
+    slug: str = Field(index=True, max_length=80)
     privacy: PrivacyLevel = Field(default=PrivacyLevel.private)
     parent_id: Optional[int] = Field(default=None, foreign_key="folders.id")
+
+    @field_validator("slug")
+    @classmethod
+    def validate_slug(cls, v: str) -> str:
+        import re
+
+        if not re.match(r"^[a-zA-Z0-9_-]+$", v):
+            raise ValueError("Invalid slug")
+        return v
 
 
 class FolderCreate(FolderBase):
@@ -117,10 +126,19 @@ class Folder(FolderBase, table=True):
 
 
 class DeckBase(SQLModel):
-    name: str
-    slug: str = Field(index=True)
+    name: str = Field(max_length=80)
+    slug: str = Field(index=True, max_length=80)
     privacy: PrivacyLevel = Field(default=PrivacyLevel.private)
     folder_id: Optional[int] = Field(default=None, foreign_key="folders.id")
+
+    @field_validator("slug")
+    @classmethod
+    def validate_slug(cls, v: str) -> str:
+        import re
+
+        if not re.match(r"^[a-zA-Z0-9_-]+$", v):
+            raise ValueError("Invalid slug")
+        return v
 
 
 class DeckCreate(DeckBase):
