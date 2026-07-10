@@ -11,6 +11,11 @@ from ..database import get_db
 router = APIRouter(prefix="/users", tags=["users"])
 
 
+@router.get("/me", response_model=models.UserRead)
+async def get_current_user(user: models.User = Depends(current_active_user)):
+    return user
+
+
 @router.get(
     "/{user_id}/items", response_model=List[Union[models.FolderRead, models.DeckRead]]
 )
