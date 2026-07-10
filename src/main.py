@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .auth.router import create_auth_router
 from .database import create_db_and_tables
-from .routers import cards, decks
+from .routers import cards, decks, folders
 
 
 @asynccontextmanager
@@ -33,5 +33,6 @@ app.add_middleware(
 app.include_router(create_auth_router(), prefix="/v1/auth", tags=["auth"])
 
 # --- App routes ---
+app.include_router(folders.router, prefix="/v1")
 app.include_router(decks.router, prefix="/v1")
 app.include_router(cards.router, prefix="/v1")

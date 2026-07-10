@@ -41,6 +41,10 @@ class User(SQLModelBaseUserDB, table=True):
         sa_relationship_kwargs={"lazy": "selectin", "cascade": "all, delete-orphan"},
         back_populates="owner",
     )
+    folders: List["Folder"] = Relationship(
+        sa_relationship_kwargs={"lazy": "selectin", "cascade": "all, delete-orphan"},
+        back_populates="owner",
+    )
 
 
 # --- User Schemas (Pydantic, not table models) ---
@@ -58,7 +62,7 @@ class UserUpdate(schemas.BaseUserUpdate):
     pass
 
 
-# --- Deck Models ---
+# --- Enums ---
 
 
 class PrivacyLevel(str, Enum):
@@ -67,10 +71,56 @@ class PrivacyLevel(str, Enum):
     public = "public"
 
 
+# --- Folder Models ---
+
+
+class FolderBase(SQLModel):
+    name: str
+    slug: str = Field(index=True)
+    privacy: PrivacyLevel = Field(default=PrivacyLevel.private)
+    parent_id: Optional[int] = Field(default=None, foreign_key="folders.id")
+
+
+class FolderCreate(FolderBase):
+    pass
+
+
+class FolderRead(FolderBase):
+    id: int
+    user_id: uuid.UUID
+
+
+class Folder(FolderBase, table=True):
+    __tablename__ = "folders"
+    __table_args__ = (UniqueConstraint("user_id", "slug", name="uq_folder_user_slug"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: Optional[uuid.UUID] = Field(default=None, foreign_key="user.id")
+
+    owner: Optional["User"] = Relationship(back_populates="folders")
+    decks: List["Deck"] = Relationship(
+        sa_relationship_kwargs={"lazy": "selectin", "cascade": "all, delete-orphan"},
+        back_populates="folder",
+    )
+
+    parent: Optional["Folder"] = Relationship(
+        back_populates="child_folders",
+        sa_relationship_kwargs={"remote_side": "Folder.id"},
+    )
+    child_folders: List["Folder"] = Relationship(
+        back_populates="parent",
+        sa_relationship_kwargs={"lazy": "selectin", "cascade": "all, delete-orphan"},
+    )
+
+
+# --- Deck Models ---
+
+
 class DeckBase(SQLModel):
     name: str
     slug: str = Field(index=True)
     privacy: PrivacyLevel = Field(default=PrivacyLevel.private)
+    folder_id: Optional[int] = Field(default=None, foreign_key="folders.id")
 
 
 class DeckCreate(DeckBase):
@@ -80,6 +130,7 @@ class DeckCreate(DeckBase):
 class DeckRead(DeckBase):
     id: int
     user_id: uuid.UUID
+    folder_id: Optional[int] = None
 
 
 class Deck(DeckBase, table=True):
@@ -90,6 +141,7 @@ class Deck(DeckBase, table=True):
     user_id: Optional[uuid.UUID] = Field(default=None, foreign_key="user.id")
 
     owner: Optional["User"] = Relationship(back_populates="decks")
+    folder: Optional["Folder"] = Relationship(back_populates="decks")
     cards: List["Card"] = Relationship(
         sa_relationship_kwargs={"lazy": "selectin", "cascade": "all, delete-orphan"},
         back_populates="deck",
@@ -119,3 +171,8 @@ class Card(CardBase, table=True):
     deck_id: Optional[int] = Field(default=None, foreign_key="decks.id")
 
     deck: Optional[Deck] = Relationship(back_populates="cards")
+
+
+class FolderWithContents(FolderRead):
+    folders: List[FolderRead] = []
+    decks: List[DeckRead] = []
