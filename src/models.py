@@ -1,10 +1,10 @@
 import uuid
 from enum import Enum
-from typing import List, Literal, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from fastapi_users import schemas
 from fastapi_users_db_sqlmodel import SQLModelBaseOAuthAccount, SQLModelBaseUserDB
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 from sqlalchemy import JSON, Column, UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -71,6 +71,11 @@ class PrivacyLevel(str, Enum):
     public = "public"
 
 
+class ItemProperties(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    color: Optional[str] = None
+
+
 # --- Folder Models ---
 
 
@@ -79,6 +84,7 @@ class FolderBase(SQLModel):
     slug: str = Field(index=True, max_length=80)
     privacy: PrivacyLevel = Field(default=PrivacyLevel.private)
     parent_id: Optional[uuid.UUID] = Field(default=None, foreign_key="folders.id")
+    properties: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
 
     @field_validator("slug")
     @classmethod
@@ -91,7 +97,7 @@ class FolderBase(SQLModel):
 
 
 class FolderCreate(FolderBase):
-    pass
+    properties: Optional[ItemProperties] = None
 
 
 class FolderUpdate(BaseModel):
@@ -99,6 +105,7 @@ class FolderUpdate(BaseModel):
     slug: Optional[str] = Field(default=None, max_length=80)
     privacy: Optional[PrivacyLevel] = None
     parent_id: Optional[uuid.UUID] = None
+    properties: Optional[ItemProperties] = None
 
     @field_validator("slug")
     @classmethod
@@ -115,6 +122,7 @@ class FolderUpdate(BaseModel):
 class FolderRead(FolderBase):
     id: uuid.UUID
     user_id: uuid.UUID
+    properties: Optional[ItemProperties] = None
 
 
 class Folder(FolderBase, table=True):
@@ -148,6 +156,7 @@ class DeckBase(SQLModel):
     slug: str = Field(index=True, max_length=80)
     privacy: PrivacyLevel = Field(default=PrivacyLevel.private)
     folder_id: Optional[uuid.UUID] = Field(default=None, foreign_key="folders.id")
+    properties: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
 
     @field_validator("slug")
     @classmethod
@@ -160,7 +169,7 @@ class DeckBase(SQLModel):
 
 
 class DeckCreate(DeckBase):
-    pass
+    properties: Optional[ItemProperties] = None
 
 
 class DeckUpdate(BaseModel):
@@ -168,6 +177,7 @@ class DeckUpdate(BaseModel):
     slug: Optional[str] = Field(default=None, max_length=80)
     privacy: Optional[PrivacyLevel] = None
     folder_id: Optional[uuid.UUID] = None
+    properties: Optional[ItemProperties] = None
 
     @field_validator("slug")
     @classmethod
@@ -185,6 +195,7 @@ class DeckRead(DeckBase):
     id: uuid.UUID
     user_id: uuid.UUID
     folder_id: Optional[uuid.UUID] = None
+    properties: Optional[ItemProperties] = None
 
 
 class Deck(DeckBase, table=True):

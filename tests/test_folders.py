@@ -313,3 +313,73 @@ async def test_delete_folder_cascades_decks_and_cards(
     # Verify card is deleted
     card = await async_session.get(models.Card, uuid.UUID(card_id))
     assert card is None
+
+
+@pytest.mark.asyncio
+async def test_create_folder_with_properties(
+    async_client: AsyncClient, guest_token1: str
+):
+    response = await async_client.post(
+        "/v1/folders/",
+        json={
+            "name": "Folder Properties",
+            "slug": "folder-properties",
+            "privacy": "public",
+            "properties": {"color": "#ff0000"},
+        },
+        headers={"Authorization": f"Bearer {guest_token1}"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data.get("properties") == {"color": "#ff0000"}
+
+
+@pytest.mark.asyncio
+async def test_create_folder_empty_properties(
+    async_client: AsyncClient, guest_token1: str
+):
+    response = await async_client.post(
+        "/v1/folders/",
+        json={
+            "name": "Folder Empty Prop",
+            "slug": "folder-empty-prop",
+            "privacy": "public",
+        },
+        headers={"Authorization": f"Bearer {guest_token1}"},
+    )
+    assert response.status_code == 200
+    assert "properties" not in response.json() or response.json()["properties"] in (
+        None,
+        {},
+    )
+
+
+@pytest.mark.asyncio
+async def test_create_folder_invalid_properties(
+    async_client: AsyncClient, guest_token1: str
+):
+    # invalid color type
+    response1 = await async_client.post(
+        "/v1/folders/",
+        json={
+            "name": "Folder Inv Prop",
+            "slug": "folder-inv-prop1",
+            "privacy": "public",
+            "properties": {"color": 123},
+        },
+        headers={"Authorization": f"Bearer {guest_token1}"},
+    )
+    assert response1.status_code == 422
+
+    # invalid property key
+    response2 = await async_client.post(
+        "/v1/folders/",
+        json={
+            "name": "Folder Inv Prop 2",
+            "slug": "folder-inv-prop2",
+            "privacy": "public",
+            "properties": {"invalid_prop": "test"},
+        },
+        headers={"Authorization": f"Bearer {guest_token1}"},
+    )
+    assert response2.status_code == 422

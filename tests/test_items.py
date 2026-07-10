@@ -155,3 +155,57 @@ async def test_get_user_items(async_client: AsyncClient, registered_user: dict):
     names = [item["name"] for item in data]
     assert "User Folder" in names
     assert "User Deck" in names
+
+
+@pytest.mark.asyncio
+async def test_items_properties(async_client: AsyncClient, registered_user: dict):
+    token = registered_user["token"]
+    user_id = registered_user["id"]
+
+    # Create a folder with properties
+    folder_resp = await async_client.post(
+        "/v1/folders/",
+        json={
+            "name": "Folder Props",
+            "slug": "folder-props",
+            "privacy": "public",
+            "properties": {"color": "#111111"},
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    folder_id = folder_resp.json()["id"]
+
+    # Create a deck with properties inside the folder
+    deck_resp = await async_client.post(
+        "/v1/decks/",
+        json={
+            "name": "Deck Props",
+            "slug": "deck-props",
+            "privacy": "private",
+            "folder_id": folder_id,
+            "properties": {"color": "#222222"},
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    # Retrieve folder items
+    get_folder_items = await async_client.get(
+        f"/v1/folders/{folder_id}/items",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert get_folder_items.status_code == 200
+    folder_items = get_folder_items.json()
+    deck_item = next(item for item in folder_items if item["name"] == "Deck Props")
+    assert deck_item.get("properties") == {"color": "#222222"}
+
+    # Retrieve user items
+    get_user_items = await async_client.get(
+        f"/v1/users/{user_id}/items",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert get_user_items.status_code == 200
+    user_items = get_user_items.json()
+    folder_item = next(item for item in user_items if item["name"] == "Folder Props")
+    assert folder_item.get("properties") == {"color": "#111111"}
+    deck_user_item = next(item for item in user_items if item["name"] == "Deck Props")
+    assert deck_user_item.get("properties") == {"color": "#222222"}

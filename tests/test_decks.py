@@ -407,3 +407,79 @@ async def test_delete_deck_cascades_cards(
     # Verify the card is also deleted from the database
     card = await async_session.get(models.Card, uuid.UUID(card_id))
     assert card is None
+
+
+@pytest.mark.asyncio
+async def test_create_deck_with_properties(async_client: AsyncClient, guest_token: str):
+    response = await async_client.post(
+        "/v1/decks/",
+        json={
+            "name": "Deck Properties",
+            "slug": "deck-properties",
+            "privacy": "private",
+            "properties": {"color": "#ffffff"},
+        },
+        headers={"Authorization": f"Bearer {guest_token}"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data.get("properties") == {"color": "#ffffff"}
+
+    # Also test retrieve
+    get_resp = await async_client.get(
+        f"/v1/decks/{data['id']}",
+        headers={"Authorization": f"Bearer {guest_token}"},
+    )
+    assert get_resp.status_code == 200
+    assert get_resp.json().get("properties") == {"color": "#ffffff"}
+
+
+@pytest.mark.asyncio
+async def test_create_deck_empty_properties(
+    async_client: AsyncClient, guest_token: str
+):
+    response = await async_client.post(
+        "/v1/decks/",
+        json={
+            "name": "Deck Empty Prop",
+            "slug": "deck-empty-prop",
+            "privacy": "private",
+        },
+        headers={"Authorization": f"Bearer {guest_token}"},
+    )
+    assert response.status_code == 200
+    assert "properties" not in response.json() or response.json()["properties"] in (
+        None,
+        {},
+    )
+
+
+@pytest.mark.asyncio
+async def test_create_deck_invalid_properties(
+    async_client: AsyncClient, guest_token: str
+):
+    # invalid color type
+    response1 = await async_client.post(
+        "/v1/decks/",
+        json={
+            "name": "Deck Inv Prop",
+            "slug": "deck-inv-prop1",
+            "privacy": "private",
+            "properties": {"color": 123},
+        },
+        headers={"Authorization": f"Bearer {guest_token}"},
+    )
+    assert response1.status_code == 422
+
+    # invalid property key
+    response2 = await async_client.post(
+        "/v1/decks/",
+        json={
+            "name": "Deck Inv Prop 2",
+            "slug": "deck-inv-prop2",
+            "privacy": "private",
+            "properties": {"invalid_prop": "test"},
+        },
+        headers={"Authorization": f"Bearer {guest_token}"},
+    )
+    assert response2.status_code == 422
