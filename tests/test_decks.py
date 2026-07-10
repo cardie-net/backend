@@ -30,25 +30,6 @@ async def test_create_deck(async_client: AsyncClient, guest_token: str):
 
 
 @pytest.mark.asyncio
-async def test_read_decks(async_client: AsyncClient, guest_token: str):
-    # Create deck first
-    await async_client.post(
-        "/v1/decks/",
-        json={"name": "Test Deck", "slug": "test-deck", "privacy": "private"},
-        headers={"Authorization": f"Bearer {guest_token}"},
-    )
-
-    # Read decks
-    response = await async_client.get(
-        "/v1/decks/", headers={"Authorization": f"Bearer {guest_token}"}
-    )
-    assert response.status_code == 200
-    data = response.json()
-    assert len(data) == 1
-    assert data[0]["name"] == "Test Deck"
-
-
-@pytest.mark.asyncio
 async def test_unauthorized_deck_creation(async_client: AsyncClient):
     response = await async_client.post(
         "/v1/decks/",

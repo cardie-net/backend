@@ -11,16 +11,6 @@ from ..database import get_db
 router = APIRouter(prefix="/decks", tags=["decks"])
 
 
-@router.get("/", response_model=List[models.DeckRead])
-async def read_my_decks(
-    skip: int = 0,
-    limit: int = 100,
-    user: models.User = Depends(current_active_user),
-    db: AsyncSession = Depends(get_db),
-):
-    return await crud.get_decks_for_user(db, user_id=user.id, skip=skip, limit=limit)
-
-
 @router.post("/", response_model=models.DeckRead)
 async def create_deck(
     deck: models.DeckCreate,

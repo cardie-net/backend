@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Union
 
 import sqlalchemy.exc
 from fastapi import APIRouter, Depends, HTTPException
@@ -33,44 +33,17 @@ async def create_folder(
         )
 
 
-@router.get("/{folder_id}", response_model=models.FolderWithContents)
-async def get_folder(
+@router.get(
+    "/{folder_id}/items", response_model=List[Union[models.FolderRead, models.DeckRead]]
+)
+async def get_folder_items(
     folder_id: int,
     user: models.User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    folder = await crud.get_folder(db, folder_id=folder_id)
-    if not folder:
-        raise HTTPException(status_code=404, detail="Folder not found")
-
-    is_owner = folder.user_id == user.id
-
-    if not is_owner and folder.privacy == models.PrivacyLevel.private:
-        raise HTTPException(status_code=403, detail="Not enough permissions")
-
-    # Filter contents based on privacy if not owner
-    if not is_owner:
-        visible_decks = [
-            d
-            for d in folder.decks
-            if d.privacy in (models.PrivacyLevel.public, models.PrivacyLevel.unlisted)
-        ]
-        visible_folders = [
-            f
-            for f in folder.child_folders
-            if f.privacy in (models.PrivacyLevel.public, models.PrivacyLevel.unlisted)
-        ]
-    else:
-        visible_decks = folder.decks
-        visible_folders = folder.child_folders
-
-    return models.FolderWithContents(
-        id=folder.id,
-        name=folder.name,
-        slug=folder.slug,
-        privacy=folder.privacy,
-        user_id=folder.user_id,
-        parent_id=folder.parent_id,
-        decks=visible_decks,
-        folders=visible_folders,
+    items = await crud.get_folder_items_recursive(
+        db, folder_id=folder_id, requesting_user_id=user.id
     )
+    if items is None:
+        raise HTTPException(status_code=404, detail="Folder not found")
+    return items
