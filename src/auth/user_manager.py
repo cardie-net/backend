@@ -19,6 +19,7 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         self, user: User, request: Optional[Request] = None
     ) -> None:
         print(f"User {user.id} has registered.")
+        await self.request_verify(user, request)
 
     async def on_after_login(
         self,
@@ -27,6 +28,11 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         response=None,
     ) -> None:
         print(f"User {user.id} has logged in.")
+
+    async def on_after_request_verify(
+        self, user: User, token: str, request: Optional[Request] = None
+    ) -> None:
+        print(f"Verification requested for user {user.id}. Verification token: {token}")
 
 
 async def get_user_db(session: AsyncSession = Depends(get_db)):
