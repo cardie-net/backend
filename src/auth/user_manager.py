@@ -1,7 +1,8 @@
 import uuid
 from typing import Optional
 
-from fastapi import Depends, Request
+from fastapi import Depends, HTTPException, Request, status
+from fastapi.security import OAuth2PasswordRequestForm
 from fastapi_users import BaseUserManager, UUIDIDMixin
 from fastapi_users_db_sqlmodel import SQLModelUserDatabaseAsync
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,15 +31,37 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
     ) -> None:
         print(f"User {user.id} has logged in.")
 
+    async def authenticate(
+        self, credentials: OAuth2PasswordRequestForm
+    ) -> Optional[User]:
+        user = await super().authenticate(credentials)
+        if user is None:
+            return None
+        if not user.is_verified and not user.is_guest:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="USER_NOT_VERIFIED",
+            )
+        return user
+
     async def on_after_request_verify(
         self, user: User, token: str, request: Optional[Request] = None
     ) -> None:
-        print(f"Verification requested for user {user.id}. Verification token: {token}")
+        print(f"Verification requested for user {user.id}.")
+        verify_url = f"{settings.FRONTEND_URL}/verify?token={token}"
 
-        subject = "Verify your email address"
-        content = (
-            f"Please verify your email address by using the following code:\n\n{token}"
-        )
+        subject = "Verify your Cardie email address"
+        content = f"Please verify your email address by clicking the following link:\n\n{verify_url}\n\nOr use this code: {token}"
+        await send_email(user.email, subject, content)
+
+    async def on_after_forgot_password(
+        self, user: User, token: str, request: Optional[Request] = None
+    ) -> None:
+        print(f"User {user.id} forgot their password.")
+        reset_url = f"{settings.FRONTEND_URL}/reset-password?token={token}"
+
+        subject = "Reset your Cardie password"
+        content = f"You requested a password reset. Click the following link to reset your password:\n\n{reset_url}\n\nOr use this code: {token}"
         await send_email(user.email, subject, content)
 
 

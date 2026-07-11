@@ -1,21 +1,37 @@
+from unittest.mock import patch
+
 import pytest
 from httpx import AsyncClient
+
+from src.auth.user_manager import UserManager
 
 
 @pytest.fixture
 async def registered_user(async_client: AsyncClient):
-    # Register user
     email = "itemstest@example.com"
     password = "supersecretpassword"
-    reg_resp = await async_client.post(
-        "/api/v1/auth/register",
-        json={
-            "email": email,
-            "password": password,
-            "is_guest": False,
-        },
-    )
-    user_id = reg_resp.json()["id"]
+
+    captured_token = None
+
+    async def mock_on_after_request_verify(self, user, token, request=None):
+        nonlocal captured_token
+        captured_token = token
+
+    with patch.object(
+        UserManager, "on_after_request_verify", new=mock_on_after_request_verify
+    ):
+        reg_resp = await async_client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": email,
+                "password": password,
+                "is_guest": False,
+            },
+        )
+        user_id = reg_resp.json()["id"]
+
+        # Verify user
+        await async_client.post("/api/v1/auth/verify", json={"token": captured_token})
 
     # Login
     login_resp = await async_client.post(

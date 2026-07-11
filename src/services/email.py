@@ -17,7 +17,9 @@ def send_email_sync(to_email: str, subject: str, content: str):
     msg["To"] = to_email
 
     try:
-        with smtplib.SMTP(settings.SMTP_SERVER, settings.SMTP_PORT) as server:
+        with smtplib.SMTP(
+            settings.SMTP_SERVER, settings.SMTP_PORT, timeout=5
+        ) as server:
             if settings.SMTP_PORT == 587:
                 server.starttls()
             if settings.SMTP_USERNAME and settings.SMTP_PASSWORD:
@@ -29,5 +31,5 @@ def send_email_sync(to_email: str, subject: str, content: str):
 
 
 async def send_email(to_email: str, subject: str, content: str):
-    """Sends an email asynchronously."""
-    await asyncio.to_thread(send_email_sync, to_email, subject, content)
+    """Sends an email asynchronously in the background."""
+    asyncio.create_task(asyncio.to_thread(send_email_sync, to_email, subject, content))
