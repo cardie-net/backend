@@ -8,7 +8,7 @@ from src.auth.user_manager import UserManager
 
 @pytest.mark.asyncio
 async def test_create_guest_user(async_client: AsyncClient):
-    response = await async_client.post("/v1/auth/guest")
+    response = await async_client.post("/api/v1/auth/guest")
     assert response.status_code == 200
     data = response.json()
     assert "access_token" in data
@@ -18,7 +18,7 @@ async def test_create_guest_user(async_client: AsyncClient):
 @pytest.mark.asyncio
 async def test_register_user(async_client: AsyncClient):
     response = await async_client.post(
-        "/v1/auth/register",
+        "/api/v1/auth/register",
         json={
             "email": "test@example.com",
             "password": "supersecretpassword",
@@ -35,7 +35,7 @@ async def test_register_user(async_client: AsyncClient):
 async def test_login_user(async_client: AsyncClient):
     # Register first
     await async_client.post(
-        "/v1/auth/register",
+        "/api/v1/auth/register",
         json={
             "email": "testlogin@example.com",
             "password": "supersecretpassword",
@@ -45,7 +45,7 @@ async def test_login_user(async_client: AsyncClient):
 
     # Login
     response = await async_client.post(
-        "/v1/auth/jwt/login",
+        "/api/v1/auth/jwt/login",
         data={"username": "testlogin@example.com", "password": "supersecretpassword"},
         headers={"Content-Type": "application/x-www-form-urlencoded"},
     )
@@ -68,7 +68,7 @@ async def test_user_verification_flow(async_client: AsyncClient):
         UserManager, "on_after_request_verify", new=mock_on_after_request_verify
     ):
         response = await async_client.post(
-            "/v1/auth/register",
+            "/api/v1/auth/register",
             json={
                 "email": "verifytest@example.com",
                 "password": "supersecretpassword",
@@ -83,7 +83,7 @@ async def test_user_verification_flow(async_client: AsyncClient):
         assert captured_token is not None, "Verification token was not captured"
 
         verify_response = await async_client.post(
-            "/v1/auth/verify", json={"token": captured_token}
+            "/api/v1/auth/verify", json={"token": captured_token}
         )
         assert verify_response.status_code == 200
         verify_data = verify_response.json()

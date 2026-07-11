@@ -8,7 +8,7 @@ async def registered_user(async_client: AsyncClient):
     email = "itemstest@example.com"
     password = "supersecretpassword"
     reg_resp = await async_client.post(
-        "/v1/auth/register",
+        "/api/v1/auth/register",
         json={
             "email": email,
             "password": password,
@@ -19,7 +19,7 @@ async def registered_user(async_client: AsyncClient):
 
     # Login
     login_resp = await async_client.post(
-        "/v1/auth/jwt/login",
+        "/api/v1/auth/jwt/login",
         data={"username": email, "password": password},
         headers={"Content-Type": "application/x-www-form-urlencoded"},
     )
@@ -29,7 +29,7 @@ async def registered_user(async_client: AsyncClient):
 
 @pytest.fixture
 async def guest_token(async_client: AsyncClient) -> str:
-    response = await async_client.post("/v1/auth/guest")
+    response = await async_client.post("/api/v1/auth/guest")
     return response.json()["access_token"]
 
 
@@ -41,7 +41,7 @@ async def test_get_folder_items(
 
     # Create parent folder
     folder_resp = await async_client.post(
-        "/v1/folders/",
+        "/api/v1/folders/",
         json={"name": "Parent Folder", "slug": "parent-folder", "privacy": "public"},
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -50,7 +50,7 @@ async def test_get_folder_items(
 
     # Create a child folder inside parent
     child_folder_resp = await async_client.post(
-        "/v1/folders/",
+        "/api/v1/folders/",
         json={
             "name": "Child Folder",
             "slug": "child-folder",
@@ -63,7 +63,7 @@ async def test_get_folder_items(
 
     # Create a deck inside parent
     deck_resp = await async_client.post(
-        "/v1/decks/",
+        "/api/v1/decks/",
         json={
             "name": "Deck in Folder",
             "slug": "deck-in-folder",
@@ -76,7 +76,7 @@ async def test_get_folder_items(
 
     # Create an unlisted deck inside parent
     unlisted_deck_resp = await async_client.post(
-        "/v1/decks/",
+        "/api/v1/decks/",
         json={
             "name": "Unlisted Deck",
             "slug": "unlisted-deck",
@@ -89,7 +89,7 @@ async def test_get_folder_items(
 
     # Create a private deck inside child folder
     private_deck_resp = await async_client.post(
-        "/v1/decks/",
+        "/api/v1/decks/",
         json={
             "name": "Private Deck",
             "slug": "private-deck",
@@ -102,7 +102,7 @@ async def test_get_folder_items(
 
     # Retrieve folder items for owner
     get_resp = await async_client.get(
-        f"/v1/folders/{folder_id}/items",
+        f"/api/v1/folders/{folder_id}/items",
         headers={"Authorization": f"Bearer {token}"},
     )
     assert get_resp.status_code == 200
@@ -118,7 +118,7 @@ async def test_get_folder_items(
 
     # Retrieve folder items for guest (another user)
     get_resp_guest = await async_client.get(
-        f"/v1/folders/{folder_id}/items",
+        f"/api/v1/folders/{folder_id}/items",
         headers={"Authorization": f"Bearer {guest_token}"},
     )
     assert get_resp_guest.status_code == 200
@@ -136,21 +136,21 @@ async def test_get_user_items(async_client: AsyncClient, registered_user: dict):
 
     # Create a folder
     folder_resp = await async_client.post(
-        "/v1/folders/",
+        "/api/v1/folders/",
         json={"name": "User Folder", "slug": "user-folder", "privacy": "public"},
         headers={"Authorization": f"Bearer {token}"},
     )
 
     # Create a deck
     deck_resp = await async_client.post(
-        "/v1/decks/",
+        "/api/v1/decks/",
         json={"name": "User Deck", "slug": "user-deck", "privacy": "private"},
         headers={"Authorization": f"Bearer {token}"},
     )
 
     # Retrieve user items
     get_resp = await async_client.get(
-        f"/v1/users/{user_id}/items",
+        f"/api/v1/users/{user_id}/items",
         headers={"Authorization": f"Bearer {token}"},
     )
 
@@ -175,7 +175,7 @@ async def test_items_properties(async_client: AsyncClient, registered_user: dict
 
     # Create a folder with properties
     folder_resp = await async_client.post(
-        "/v1/folders/",
+        "/api/v1/folders/",
         json={
             "name": "Folder Props",
             "slug": "folder-props",
@@ -188,7 +188,7 @@ async def test_items_properties(async_client: AsyncClient, registered_user: dict
 
     # Create a deck with properties inside the folder
     deck_resp = await async_client.post(
-        "/v1/decks/",
+        "/api/v1/decks/",
         json={
             "name": "Deck Props",
             "slug": "deck-props",
@@ -201,7 +201,7 @@ async def test_items_properties(async_client: AsyncClient, registered_user: dict
 
     # Retrieve folder items
     get_folder_items = await async_client.get(
-        f"/v1/folders/{folder_id}/items",
+        f"/api/v1/folders/{folder_id}/items",
         headers={"Authorization": f"Bearer {token}"},
     )
     assert get_folder_items.status_code == 200
@@ -211,7 +211,7 @@ async def test_items_properties(async_client: AsyncClient, registered_user: dict
 
     # Retrieve user items
     get_user_items = await async_client.get(
-        f"/v1/users/{user_id}/items",
+        f"/api/v1/users/{user_id}/items",
         headers={"Authorization": f"Bearer {token}"},
     )
     assert get_user_items.status_code == 200

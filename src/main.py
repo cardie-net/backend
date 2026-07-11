@@ -30,10 +30,10 @@ app.add_middleware(
 )
 
 # --- Auth routes ---
-app.include_router(create_auth_router(), prefix="/v1/auth", tags=["auth"])
+app.include_router(create_auth_router(), prefix="/api/v1/auth", tags=["auth"])
 
 # --- App routes ---
-app.include_router(folders.router, prefix="/v1")
-app.include_router(decks.router, prefix="/v1")
-app.include_router(cards.router, prefix="/v1")
-app.include_router(users.router, prefix="/v1")
+app.include_router(folders.router, prefix="/api/v1")
+app.include_router(decks.router, prefix="/api/v1")
+app.include_router(cards.router, prefix="/api/v1")
+app.include_router(users.router, prefix="/api/v1")

@@ -4,14 +4,14 @@ from httpx import AsyncClient
 
 @pytest.fixture
 async def guest_token1(async_client: AsyncClient) -> str:
-    response = await async_client.post("/v1/auth/guest")
+    response = await async_client.post("/api/v1/auth/guest")
     return response.json()["access_token"]
 
 
 @pytest.mark.asyncio
 async def test_get_me_authenticated(async_client: AsyncClient, guest_token1: str):
     response = await async_client.get(
-        "/v1/users/me",
+        "/api/v1/users/me",
         headers={"Authorization": f"Bearer {guest_token1}"},
     )
     assert response.status_code == 200
@@ -25,5 +25,5 @@ async def test_get_me_authenticated(async_client: AsyncClient, guest_token1: str
 
 @pytest.mark.asyncio
 async def test_get_me_unauthenticated(async_client: AsyncClient):
-    response = await async_client.get("/v1/users/me")
+    response = await async_client.get("/api/v1/users/me")
     assert response.status_code == 401
