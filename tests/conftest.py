@@ -41,3 +41,14 @@ async def async_client(async_session: AsyncSession) -> AsyncClient:
         transport=ASGITransport(app=app), base_url="http://test"
     ) as client:
         yield client
+
+
+from unittest.mock import patch
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def mock_send_email():
+    with patch("src.auth.user_manager.send_email") as mock:
+        yield mock

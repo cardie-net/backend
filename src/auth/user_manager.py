@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..config import settings
 from ..database import get_db
 from ..models import OAuthAccount, User
+from ..services.email import send_email
 
 
 class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
@@ -33,6 +34,12 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         self, user: User, token: str, request: Optional[Request] = None
     ) -> None:
         print(f"Verification requested for user {user.id}. Verification token: {token}")
+
+        subject = "Verify your email address"
+        content = (
+            f"Please verify your email address by using the following code:\n\n{token}"
+        )
+        await send_email(user.email, subject, content)
 
 
 async def get_user_db(session: AsyncSession = Depends(get_db)):
