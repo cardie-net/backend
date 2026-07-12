@@ -37,7 +37,9 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         user = await super().authenticate(credentials)
         if user is None:
             return None
-        if not user.is_verified and not user.is_guest:
+        if user.is_guest:
+            return None
+        if not user.is_verified:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="USER_NOT_VERIFIED",
