@@ -34,6 +34,9 @@ class User(SQLModelBaseUserDB, table=True):
     __tablename__ = "user"
 
     is_guest: bool = Field(default=False)
+    email_verification_token: Optional[str] = Field(
+        default=None, index=True, unique=True
+    )
 
     oauth_accounts: List[OAuthAccount] = Relationship(
         sa_relationship_kwargs={"lazy": "joined", "cascade": "all, delete-orphan"}

@@ -1,11 +1,14 @@
+import random
+import string
 import uuid
 from typing import Optional
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
-from fastapi_users import BaseUserManager, UUIDIDMixin
+from fastapi_users import BaseUserManager, UUIDIDMixin, exceptions
 from fastapi_users_db_sqlmodel import SQLModelUserDatabaseAsync
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import select
 
 from ..config import settings
 from ..database import get_db
@@ -45,6 +48,55 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
                 detail="USER_NOT_VERIFIED",
             )
         return user
+
+    async def request_verify(
+        self, user: User, request: Optional[Request] = None
+    ) -> None:
+        if not user.is_active:
+            raise exceptions.UserInactive()
+        if user.is_verified:
+            raise exceptions.UserAlreadyVerified()
+
+        # Generate a unique short 10-character alphanumeric code
+        while True:
+            token = "".join(random.choices(string.ascii_letters + string.digits, k=10))
+            statement = select(self.user_db.user_model).where(
+                self.user_db.user_model.email_verification_token == token
+            )
+            results = await self.user_db.session.execute(statement)
+            existing_user = results.first()
+            if not existing_user:
+                break
+
+        # Save it to the user object
+        user = await self.user_db.update(user, {"email_verification_token": token})
+
+        await self.on_after_request_verify(user, token, request)
+
+    async def verify(self, token: str, request: Optional[Request] = None) -> User:
+        # Find user by token
+        statement = select(self.user_db.user_model).where(
+            self.user_db.user_model.email_verification_token == token
+        )
+        results = await self.user_db.session.execute(statement)
+        user = results.first()
+
+        if not user:
+            raise exceptions.InvalidVerifyToken()
+
+        user = user[0]
+
+        if user.is_verified:
+            raise exceptions.UserAlreadyVerified()
+
+        # Mark as verified and clear the token
+        verified_user = await self.user_db.update(
+            user, {"is_verified": True, "email_verification_token": None}
+        )
+
+        await self.on_after_verify(verified_user, request)
+
+        return verified_user
 
     async def on_after_request_verify(
         self, user: User, token: str, request: Optional[Request] = None
