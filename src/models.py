@@ -5,7 +5,9 @@ from typing import Any, Dict, List, Literal, Optional, Union
 
 from fastapi_users import schemas
 from fastapi_users_db_sqlmodel import SQLModelBaseOAuthAccount, SQLModelBaseUserDB
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict
+from pydantic import Field as PydanticField
+from pydantic import field_validator
 from sqlalchemy import JSON, Column, UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -37,6 +39,8 @@ class User(SQLModelBaseUserDB, table=True):
     email_verification_token: Optional[str] = Field(
         default=None, index=True, unique=True
     )
+    username: str = Field(unique=True, index=True, max_length=32)
+    display_name: str = Field(max_length=80)
 
     oauth_accounts: List[OAuthAccount] = Relationship(
         sa_relationship_kwargs={"lazy": "joined", "cascade": "all, delete-orphan"}
@@ -56,14 +60,23 @@ class User(SQLModelBaseUserDB, table=True):
 
 class UserRead(schemas.BaseUser[uuid.UUID]):
     is_guest: bool
+    username: str
+    display_name: str
 
 
 class UserCreate(schemas.BaseUserCreate):
     is_guest: bool = False
+    username: Optional[str] = None
+    display_name: Optional[str] = None
 
 
 class UserUpdate(schemas.BaseUserUpdate):
-    pass
+    username: Optional[str] = PydanticField(
+        default=None, min_length=8, max_length=32, pattern=r"^[a-zA-Z0-9_-]+$"
+    )
+    display_name: Optional[str] = PydanticField(
+        default=None, min_length=1, max_length=80
+    )
 
 
 # --- Enums ---

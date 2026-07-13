@@ -1,11 +1,12 @@
 import random
+import re
 import string
 import uuid
 from typing import Optional
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
-from fastapi_users import BaseUserManager, UUIDIDMixin, exceptions
+from fastapi_users import BaseUserManager, UUIDIDMixin, exceptions, models, schemas
 from fastapi_users_db_sqlmodel import SQLModelUserDatabaseAsync
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
@@ -19,6 +20,47 @@ from ..services.email import send_email
 class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
     reset_password_token_secret = settings.SECRET_KEY
     verification_token_secret = settings.SECRET_KEY
+
+    async def create(
+        self,
+        user_create: schemas.UC,
+        safe: bool = False,
+        request: Optional[Request] = None,
+    ) -> models.UP:
+        email = user_create.email
+        base_username = email.split("@")[0]
+        # url-safe characters only
+        base_username = re.sub(r"[^a-zA-Z0-9_-]", "", base_username)
+        if not base_username:
+            base_username = "user"
+
+        username = base_username
+
+        statement = select(self.user_db.user_model).where(
+            self.user_db.user_model.username.like(f"{base_username}%")
+        )
+        results = await self.user_db.session.execute(statement)
+        existing_users = results.unique().all()
+        existing_usernames = {u[0].username for u in existing_users}
+
+        if username in existing_usernames:
+            counter = 1
+            match = re.search(r"(\d+)$", username)
+            if match:
+                counter = int(match.group(1)) + 1
+                base_username = username[: match.start()]
+
+            username = f"{base_username}{counter}"
+            while username in existing_usernames:
+                counter += 1
+                username = f"{base_username}{counter}"
+
+        if getattr(user_create, "username", None) is None:
+            user_create.username = username
+        if getattr(user_create, "display_name", None) is None:
+            user_create.display_name = username
+
+        return await super().create(user_create, safe=safe, request=request)
 
     async def on_after_register(
         self, user: User, request: Optional[Request] = None

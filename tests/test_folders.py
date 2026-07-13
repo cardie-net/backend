@@ -17,7 +17,7 @@ async def guest_token2(async_client: AsyncClient) -> str:
 @pytest.mark.asyncio
 async def test_create_folder(async_client: AsyncClient, guest_token1: str):
     response = await async_client.post(
-        "/api/v1/folders/",
+        "/api/v1/folders",
         json={"name": "Test Folder", "slug": "test-folder", "privacy": "public"},
         headers={"Authorization": f"Bearer {guest_token1}"},
     )
@@ -34,7 +34,7 @@ async def test_create_folder_name_too_long(
     async_client: AsyncClient, guest_token1: str
 ):
     response = await async_client.post(
-        "/api/v1/folders/",
+        "/api/v1/folders",
         json={"name": "A" * 81, "slug": "valid-slug", "privacy": "public"},
         headers={"Authorization": f"Bearer {guest_token1}"},
     )
@@ -62,7 +62,7 @@ async def test_create_folder_invalid_slug(
     async_client: AsyncClient, guest_token1: str, invalid_slug: str
 ):
     response = await async_client.post(
-        "/api/v1/folders/",
+        "/api/v1/folders",
         json={"name": "Valid Name", "slug": invalid_slug, "privacy": "public"},
         headers={"Authorization": f"Bearer {guest_token1}"},
     )
@@ -74,7 +74,7 @@ async def test_create_folder_invalid_privacy(
     async_client: AsyncClient, guest_token1: str
 ):
     response = await async_client.post(
-        "/api/v1/folders/",
+        "/api/v1/folders",
         json={"name": "Valid Name", "slug": "valid-slug", "privacy": "super-secret"},
         headers={"Authorization": f"Bearer {guest_token1}"},
     )
@@ -86,7 +86,7 @@ async def test_create_folder_non_existent_parent(
     async_client: AsyncClient, guest_token1: str
 ):
     response = await async_client.post(
-        "/api/v1/folders/",
+        "/api/v1/folders",
         json={
             "name": "Valid Name",
             "slug": "valid-slug",
@@ -104,7 +104,7 @@ async def test_create_folder_not_owned_parent(
 ):
     # Create folder with guest_token2
     parent_resp = await async_client.post(
-        "/api/v1/folders/",
+        "/api/v1/folders",
         json={
             "name": "Other User Folder",
             "slug": "other-user-folder",
@@ -116,7 +116,7 @@ async def test_create_folder_not_owned_parent(
 
     # Try to create child folder with guest_token1
     response = await async_client.post(
-        "/api/v1/folders/",
+        "/api/v1/folders",
         json={
             "name": "Valid Name",
             "slug": "valid-slug",
@@ -132,7 +132,7 @@ async def test_create_folder_not_owned_parent(
 async def test_delete_folder_success(async_client: AsyncClient, guest_token1: str):
     # Create folder
     create_resp = await async_client.post(
-        "/api/v1/folders/",
+        "/api/v1/folders",
         json={"name": "To Delete", "slug": "to-delete", "privacy": "public"},
         headers={"Authorization": f"Bearer {guest_token1}"},
     )
@@ -152,7 +152,7 @@ async def test_delete_folder_not_owned(
 ):
     # Create folder with guest_token1
     create_resp = await async_client.post(
-        "/api/v1/folders/",
+        "/api/v1/folders",
         json={"name": "Not Yours", "slug": "not-yours", "privacy": "public"},
         headers={"Authorization": f"Bearer {guest_token1}"},
     )
@@ -179,7 +179,7 @@ async def test_delete_folder_not_found(async_client: AsyncClient, guest_token1: 
 async def test_patch_folder_success(async_client: AsyncClient, guest_token1: str):
     # Create folder
     create_resp = await async_client.post(
-        "/api/v1/folders/",
+        "/api/v1/folders",
         json={"name": "Old Name", "slug": "old-slug", "privacy": "public"},
         headers={"Authorization": f"Bearer {guest_token1}"},
     )
@@ -202,7 +202,7 @@ async def test_patch_folder_success(async_client: AsyncClient, guest_token1: str
 async def test_patch_folder_parent_id(async_client: AsyncClient, guest_token1: str):
     # Create parent folder
     parent_resp = await async_client.post(
-        "/api/v1/folders/",
+        "/api/v1/folders",
         json={"name": "Parent", "slug": "parent", "privacy": "public"},
         headers={"Authorization": f"Bearer {guest_token1}"},
     )
@@ -210,7 +210,7 @@ async def test_patch_folder_parent_id(async_client: AsyncClient, guest_token1: s
 
     # Create child folder
     child_resp = await async_client.post(
-        "/api/v1/folders/",
+        "/api/v1/folders",
         json={"name": "Child", "slug": "child", "privacy": "public"},
         headers={"Authorization": f"Bearer {guest_token1}"},
     )
@@ -232,7 +232,7 @@ async def test_patch_folder_not_owned(
 ):
     # Create folder with guest_token1
     create_resp = await async_client.post(
-        "/api/v1/folders/",
+        "/api/v1/folders",
         json={"name": "Not Yours", "slug": "not-yours", "privacy": "public"},
         headers={"Authorization": f"Bearer {guest_token1}"},
     )
@@ -269,7 +269,7 @@ async def test_delete_folder_cascades_decks_and_cards(
 
     # Create folder
     folder_resp = await async_client.post(
-        "/api/v1/folders/",
+        "/api/v1/folders",
         json={"name": "Folder for Cascades", "slug": unique_slug, "privacy": "private"},
         headers={"Authorization": f"Bearer {guest_token1}"},
     )
@@ -320,7 +320,7 @@ async def test_create_folder_with_properties(
     async_client: AsyncClient, guest_token1: str
 ):
     response = await async_client.post(
-        "/api/v1/folders/",
+        "/api/v1/folders",
         json={
             "name": "Folder Properties",
             "slug": "folder-properties",
@@ -339,7 +339,7 @@ async def test_create_folder_empty_properties(
     async_client: AsyncClient, guest_token1: str
 ):
     response = await async_client.post(
-        "/api/v1/folders/",
+        "/api/v1/folders",
         json={
             "name": "Folder Empty Prop",
             "slug": "folder-empty-prop",
@@ -360,7 +360,7 @@ async def test_create_folder_invalid_properties(
 ):
     # invalid color type
     response1 = await async_client.post(
-        "/api/v1/folders/",
+        "/api/v1/folders",
         json={
             "name": "Folder Inv Prop",
             "slug": "folder-inv-prop1",
@@ -373,7 +373,7 @@ async def test_create_folder_invalid_properties(
 
     # invalid property key
     response2 = await async_client.post(
-        "/api/v1/folders/",
+        "/api/v1/folders",
         json={
             "name": "Folder Inv Prop 2",
             "slug": "folder-inv-prop2",

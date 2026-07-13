@@ -27,3 +27,99 @@ async def test_get_me_authenticated(async_client: AsyncClient, guest_token1: str
 async def test_get_me_unauthenticated(async_client: AsyncClient):
     response = await async_client.get("/api/v1/users/me")
     assert response.status_code == 401
+
+
+import uuid
+
+import pytest
+from httpx import AsyncClient
+
+
+@pytest.mark.asyncio
+async def test_username_auto_generation(async_client: AsyncClient):
+    response = await async_client.post(
+        "/api/v1/auth/register",
+        json={"email": "test@example.com", "password": "password123"},
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["username"] == "test"
+    assert data["display_name"] == "test"
+
+
+@pytest.mark.asyncio
+async def test_username_auto_generation_conflict(async_client: AsyncClient):
+    await async_client.post(
+        "/api/v1/auth/register",
+        json={"email": "conflict@example.com", "password": "password123"},
+    )
+    response = await async_client.post(
+        "/api/v1/auth/register",
+        json={"email": "conflict@other.com", "password": "password123"},
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["username"] == "conflict1"
+
+
+@pytest.mark.asyncio
+async def test_username_auto_generation_conflict_multiple(async_client: AsyncClient):
+    await async_client.post(
+        "/api/v1/auth/register",
+        json={"email": "multi@example.com", "password": "password123"},
+    )
+    await async_client.post(
+        "/api/v1/auth/register",
+        json={"email": "multi@other.com", "password": "password123"},
+    )
+    response = await async_client.post(
+        "/api/v1/auth/register",
+        json={"email": "multi@third.com", "password": "password123"},
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["username"] == "multi2"
+
+
+@pytest.mark.asyncio
+async def test_patch_user(async_client: AsyncClient, guest_token1: str):
+    # Patch username and display_name using guest token
+    token = guest_token1
+    response = await async_client.patch(
+        "/api/v1/users/me",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"username": "newusername", "display_name": "New Display Name"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["username"] == "newusername"
+    assert data["display_name"] == "New Display Name"
+
+
+@pytest.mark.asyncio
+async def test_patch_user_validation(async_client: AsyncClient, guest_token1: str):
+    token = guest_token1
+
+    # Invalid username (too short)
+    response = await async_client.patch(
+        "/api/v1/users/me",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"username": "short"},
+    )
+    assert response.status_code == 422
+
+    # Invalid username (not url safe)
+    response = await async_client.patch(
+        "/api/v1/users/me",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"username": "invalid username!"},
+    )
+    assert response.status_code == 422
+
+    # Invalid display_name (too long)
+    response = await async_client.patch(
+        "/api/v1/users/me",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"display_name": "a" * 81},
+    )
+    assert response.status_code == 422
