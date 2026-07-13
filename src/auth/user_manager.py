@@ -24,7 +24,8 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         self, user: User, request: Optional[Request] = None
     ) -> None:
         print(f"User {user.id} has registered.")
-        await self.request_verify(user, request)
+        if not user.is_guest:
+            await self.request_verify(user, request)
 
     async def on_after_login(
         self,
