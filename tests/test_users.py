@@ -43,12 +43,15 @@ async def test_username_auto_generation(async_client: AsyncClient):
     )
     assert response.status_code == 201
     data = response.json()
-    assert data["username"] == "test"
-    assert data["display_name"] == "test"
+    assert data["username"].startswith("test")
+    assert len(data["username"]) == 8
+    assert data["display_name"] == data["username"]
 
 
 @pytest.mark.asyncio
 async def test_username_auto_generation_conflict(async_client: AsyncClient):
+    # 'conflict' is exactly 8 chars, so no random padding should be added.
+    # We expect 'conflict' and then 'conflict1'.
     await async_client.post(
         "/api/v1/auth/register",
         json={"email": "conflict@example.com", "password": "password123"},
@@ -64,6 +67,8 @@ async def test_username_auto_generation_conflict(async_client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_username_auto_generation_conflict_multiple(async_client: AsyncClient):
+    # 'multi' is 5 chars, so they will all get 3 random digits padding.
+    # Because they are random, they likely won't collide. We just check they are valid.
     await async_client.post(
         "/api/v1/auth/register",
         json={"email": "multi@example.com", "password": "password123"},
@@ -78,7 +83,37 @@ async def test_username_auto_generation_conflict_multiple(async_client: AsyncCli
     )
     assert response.status_code == 201
     data = response.json()
-    assert data["username"] == "multi2"
+    assert data["username"].startswith("multi")
+    assert len(data["username"]) == 8
+
+
+@pytest.mark.asyncio
+async def test_username_auto_generation_long_email(async_client: AsyncClient):
+    # longusername is > 8 chars, no padding needed.
+    response = await async_client.post(
+        "/api/v1/auth/register",
+        json={"email": "longusername@example.com", "password": "password123"},
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["username"] == "longusername"
+    assert data["display_name"] == "longusername"
+
+
+@pytest.mark.asyncio
+async def test_username_auto_generation_short_email_padding(async_client: AsyncClient):
+    # 'a' is 1 char, needs 7 random digits padding.
+    response = await async_client.post(
+        "/api/v1/auth/register",
+        json={"email": "a@example.com", "password": "password123"},
+    )
+    assert response.status_code == 201
+    data = response.json()
+    username = data["username"]
+    assert username.startswith("a")
+    assert len(username) == 8
+    # The padding should be composed of digits
+    assert username[1:].isdigit()
 
 
 @pytest.mark.asyncio

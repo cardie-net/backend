@@ -29,6 +29,15 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
             base_username = "user"
 
         username = base_username
+        if len(username) < 8:
+            padding_length = 8 - len(username)
+            first_digit = random.choice(string.digits[1:])
+            other_digits = (
+                "".join(random.choices(string.digits, k=padding_length - 1))
+                if padding_length > 1
+                else ""
+            )
+            username += first_digit + other_digits
 
         statement = select(self.user_db.user_model).where(
             self.user_db.user_model.username.like(f"{base_username}%")
@@ -39,15 +48,23 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
 
         if username in existing_usernames:
             counter = 1
+            match_len = 0
             match = re.search(r"(\d+)$", username)
             if match:
                 counter = int(match.group(1)) + 1
                 base_username = username[: match.start()]
+                match_len = len(match.group(1))
 
-            username = f"{base_username}{counter}"
+            counter_str = (
+                str(counter).zfill(match_len) if match_len > 0 else str(counter)
+            )
+            username = f"{base_username}{counter_str}"
             while username in existing_usernames:
                 counter += 1
-                username = f"{base_username}{counter}"
+                counter_str = (
+                    str(counter).zfill(match_len) if match_len > 0 else str(counter)
+                )
+                username = f"{base_username}{counter_str}"
 
         return username
 
