@@ -11,7 +11,7 @@ from ..database import get_db
 router = APIRouter(prefix="/decks/{deck_id}/cards", tags=["cards"])
 
 
-@router.get("/", response_model=List[models.CardRead])
+@router.get("", response_model=List[models.CardRead])
 async def read_cards(
     deck_id: uuid.UUID,
     user: models.User = Depends(current_active_user),
@@ -25,7 +25,7 @@ async def read_cards(
     return await crud.get_cards_for_deck(db, deck_id=deck_id)
 
 
-@router.post("/", response_model=models.CardRead)
+@router.post("", response_model=models.CardRead)
 async def create_card(
     deck_id: uuid.UUID,
     card: models.CardCreate,

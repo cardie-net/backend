@@ -11,7 +11,7 @@ from ..database import get_db
 router = APIRouter(prefix="/decks", tags=["decks"])
 
 
-@router.post("/", response_model=models.DeckRead)
+@router.post("", response_model=models.DeckRead)
 async def create_deck(
     deck: models.DeckCreate,
     user: models.User = Depends(current_active_user),
