@@ -124,10 +124,25 @@ def create_google_oauth_router() -> APIRouter:
                 url=_build_frontend_url("/login", {"error": "oauth_csrf_mismatch"})
             )
 
+        from httpx_oauth.exceptions import GetIdEmailError
+
         # Exchange Google token for user info
-        account_id, account_email = await google_oauth_client.get_id_email(
-            token["access_token"]
-        )
+        try:
+            account_id, account_email = await google_oauth_client.get_id_email(
+                token["access_token"]
+            )
+        except GetIdEmailError as e:
+            error_text = (
+                getattr(e.response, "text", "Unknown")
+                if hasattr(e, "response") and e.response
+                else str(e)
+            )
+            print(
+                f"Google OAuth get_id_email failed. Please ensure the 'Google People API' is enabled in your Google Cloud Console. Details: {error_text}"
+            )
+            return RedirectResponse(
+                url=_build_frontend_url("/login", {"error": "oauth_profile_error"})
+            )
 
         if account_email is None:
             return RedirectResponse(
