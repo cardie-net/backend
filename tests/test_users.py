@@ -123,3 +123,30 @@ async def test_patch_user_validation(async_client: AsyncClient, guest_token1: st
         json={"display_name": "a" * 81},
     )
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_get_user_profile_success(async_client: AsyncClient, guest_token1: str):
+    # First, get the me data to find the generated username
+    response = await async_client.get(
+        "/api/v1/users/me",
+        headers={"Authorization": f"Bearer {guest_token1}"},
+    )
+    assert response.status_code == 200
+    user_data = response.json()
+    username = user_data["username"]
+
+    # Now test the profile endpoint
+    profile_response = await async_client.get(f"/api/v1/users/profile/{username}")
+    assert profile_response.status_code == 200
+    profile_data = profile_response.json()
+    assert profile_data["username"] == username
+    assert profile_data["id"] == user_data["id"]
+
+
+@pytest.mark.asyncio
+async def test_get_user_profile_not_found(async_client: AsyncClient):
+    response = await async_client.get("/api/v1/users/profile/nonexistentusername")
+    assert response.status_code == 404
+    data = response.json()
+    assert data["detail"] == "User not found"
