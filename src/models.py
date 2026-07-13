@@ -26,7 +26,7 @@ CardElement = Union[TextElement]
 
 
 class OAuthAccount(SQLModelBaseOAuthAccount, table=True):
-    pass
+    user: "User" = Relationship(back_populates="oauth_accounts")
 
 
 # --- User DB Model ---
@@ -43,7 +43,8 @@ class User(SQLModelBaseUserDB, table=True):
     display_name: str = Field(max_length=80)
 
     oauth_accounts: List[OAuthAccount] = Relationship(
-        sa_relationship_kwargs={"lazy": "joined", "cascade": "all, delete-orphan"}
+        back_populates="user",
+        sa_relationship_kwargs={"lazy": "joined", "cascade": "all, delete-orphan"},
     )
     decks: List["Deck"] = Relationship(
         sa_relationship_kwargs={"lazy": "selectin", "cascade": "all, delete-orphan"},

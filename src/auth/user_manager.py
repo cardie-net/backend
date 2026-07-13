@@ -21,13 +21,7 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
     reset_password_token_secret = settings.SECRET_KEY
     verification_token_secret = settings.SECRET_KEY
 
-    async def create(
-        self,
-        user_create: schemas.UC,
-        safe: bool = False,
-        request: Optional[Request] = None,
-    ) -> models.UP:
-        email = user_create.email
+    async def _generate_unique_username(self, email: str) -> str:
         base_username = email.split("@")[0]
         # url-safe characters only
         base_username = re.sub(r"[^a-zA-Z0-9_-]", "", base_username)
@@ -55,18 +49,85 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
                 counter += 1
                 username = f"{base_username}{counter}"
 
+        return username
+
+    async def create(
+        self,
+        user_create: schemas.UC,
+        safe: bool = False,
+        request: Optional[Request] = None,
+    ) -> models.UP:
         if getattr(user_create, "username", None) is None:
+            username = await self._generate_unique_username(user_create.email)
             user_create.username = username
         if getattr(user_create, "display_name", None) is None:
-            user_create.display_name = username
+            user_create.display_name = user_create.username
 
         return await super().create(user_create, safe=safe, request=request)
+
+    async def oauth_callback(
+        self,
+        oauth_name: str,
+        access_token: str,
+        account_id: str,
+        account_email: str,
+        expires_at: Optional[int] = None,
+        refresh_token: Optional[str] = None,
+        request: Optional[Request] = None,
+        *,
+        associate_by_email: bool = False,
+        is_verified_by_default: bool = False,
+    ) -> User:
+        oauth_account_dict = {
+            "oauth_name": oauth_name,
+            "access_token": access_token,
+            "account_id": account_id,
+            "account_email": account_email,
+            "expires_at": expires_at,
+            "refresh_token": refresh_token,
+        }
+
+        try:
+            user = await self.get_by_oauth_account(oauth_name, account_id)
+        except exceptions.UserNotExists:
+            try:
+                # Associate account
+                user = await self.get_by_email(account_email)
+                if not associate_by_email:
+                    raise exceptions.UserAlreadyExists()
+                user = await self.user_db.add_oauth_account(user, oauth_account_dict)
+            except exceptions.UserNotExists:
+                # Create account
+                password = self.password_helper.generate()
+                username = await self._generate_unique_username(account_email)
+                user_dict = {
+                    "email": account_email,
+                    "hashed_password": self.password_helper.hash(password),
+                    "is_verified": is_verified_by_default,
+                    "username": username,
+                    "display_name": username,
+                }
+                user = await self.user_db.create(user_dict)
+                user = await self.user_db.add_oauth_account(user, oauth_account_dict)
+                await self.on_after_register(user, request)
+        else:
+            # Update oauth
+            for existing_oauth_account in user.oauth_accounts:
+                if (
+                    existing_oauth_account.account_id == account_id
+                    and existing_oauth_account.oauth_name == oauth_name
+                ):
+                    user = await self.user_db.update_oauth_account(
+                        user, existing_oauth_account, oauth_account_dict
+                    )
+
+        return user
 
     async def on_after_register(
         self, user: User, request: Optional[Request] = None
     ) -> None:
         print(f"User {user.id} has registered.")
-        if not user.is_guest:
+        if not user.is_guest and not user.is_verified:
             await self.request_verify(user, request)
 
     async def on_after_login(
