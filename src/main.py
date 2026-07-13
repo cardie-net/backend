@@ -1,7 +1,8 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 
 from .auth.router import create_auth_router
 from .database import create_db_and_tables
@@ -20,6 +21,15 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+
+@app.middleware("http")
+async def redirect_trailing_slash(request: Request, call_next):
+    if request.url.path != "/" and request.url.path.endswith("/"):
+        redirect_url = request.url.replace(path=request.url.path.rstrip("/"))
+        return RedirectResponse(url=str(redirect_url), status_code=307)
+    return await call_next(request)
+
 
 app.add_middleware(
     CORSMiddleware,

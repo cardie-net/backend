@@ -12,7 +12,7 @@ from ..database import get_db
 router = APIRouter(prefix="/folders", tags=["folders"])
 
 
-@router.post("/", response_model=models.FolderRead)
+@router.post("", response_model=models.FolderRead)
 async def create_folder(
     folder: models.FolderCreate,
     user: models.User = Depends(current_active_user),
