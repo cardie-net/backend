@@ -11,7 +11,11 @@ from ..auth.router import current_active_user
 from ..auth.user_manager import UserManager, get_user_manager
 from ..database import get_db
 from ..services.image_service import optimize_image
-from ..services.s3_service import upload_file_to_s3
+from ..services.s3_service import (
+    delete_file_from_s3,
+    extract_object_name_from_url,
+    upload_file_to_s3,
+)
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -57,6 +61,12 @@ async def upload_avatar(
         # Optimize image in a separate thread
         optimized_bytes = await asyncio.to_thread(optimize_image, contents)
 
+        # Delete old avatar if it exists
+        if user.avatar_url:
+            old_object_name = extract_object_name_from_url(user.avatar_url)
+            if old_object_name:
+                await asyncio.to_thread(delete_file_from_s3, old_object_name)
+
         # Upload to S3
         file_extension = "webp"
         object_name = f"avatars/{user.id}/{uuid.uuid4()}.{file_extension}"
@@ -71,6 +81,24 @@ async def upload_avatar(
         return user
     except Exception as e:
         raise fastapi.HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/me/avatar", response_model=models.UserRead)
+async def remove_avatar(
+    user: models.User = Depends(current_active_user),
+    user_manager: UserManager = Depends(get_user_manager),
+):
+    if user.avatar_url:
+        old_object_name = extract_object_name_from_url(user.avatar_url)
+        if old_object_name:
+            await asyncio.to_thread(delete_file_from_s3, old_object_name)
+
+        user_update = models.UserUpdate(avatar_url=None)
+        # Using safe=False or safe=True depending on if fastapi-users allows None.
+        # But wait, fastapi-users Pydantic models with `None` might ignore the update if unset.
+        # So we create dict explicitly if needed, but user_update(avatar_url=None) is fine.
+        user = await user_manager.update(user_update, user, safe=True)
+    return user
 
 
 @router.get("/profile/{username}", response_model=models.UserRead)

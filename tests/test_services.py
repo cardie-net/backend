@@ -44,4 +44,4 @@ def test_upload_file_to_s3(mock_get_s3_client):
         ContentType="image/webp",
     )
 
-    assert result == "http://test-endpoint/test-bucket/test_key"
+    assert result == "https://test-bucket/test_key"
