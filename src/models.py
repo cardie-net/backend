@@ -41,6 +41,7 @@ class User(SQLModelBaseUserDB, table=True):
     )
     username: str = Field(unique=True, index=True, max_length=32)
     display_name: str = Field(max_length=80)
+    avatar_url: Optional[str] = Field(default=None)
 
     oauth_accounts: List[OAuthAccount] = Relationship(
         back_populates="user",
@@ -63,6 +64,7 @@ class UserRead(schemas.BaseUser[uuid.UUID]):
     is_guest: bool
     username: str
     display_name: str
+    avatar_url: Optional[str] = None
 
 
 class UserCreate(schemas.BaseUserCreate):
@@ -78,6 +80,7 @@ class UserUpdate(schemas.BaseUserUpdate):
     display_name: Optional[str] = PydanticField(
         default=None, min_length=1, max_length=80
     )
+    avatar_url: Optional[str] = None
 
 
 # --- Enums ---

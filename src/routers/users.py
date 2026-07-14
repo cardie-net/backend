@@ -1,6 +1,8 @@
+import asyncio
 import uuid
 from typing import List, Union
 
+import fastapi
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,6 +10,8 @@ from .. import crud, models
 from ..auth.router import current_active_user
 from ..auth.user_manager import UserManager, get_user_manager
 from ..database import get_db
+from ..services.image_service import optimize_image
+from ..services.s3_service import upload_file_to_s3
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -36,6 +40,37 @@ async def update_current_user(
                 detail="USERNAME_ALREADY_EXISTS",
             )
         raise e
+
+
+@router.post("/me/avatar", response_model=models.UserRead)
+async def upload_avatar(
+    file: fastapi.UploadFile = fastapi.File(...),
+    user: models.User = Depends(current_active_user),
+    user_manager: UserManager = Depends(get_user_manager),
+):
+    if not file.content_type.startswith("image/"):
+        raise fastapi.HTTPException(status_code=400, detail="File must be an image")
+
+    try:
+        contents = await file.read()
+
+        # Optimize image in a separate thread
+        optimized_bytes = await asyncio.to_thread(optimize_image, contents)
+
+        # Upload to S3
+        file_extension = "webp"
+        object_name = f"avatars/{user.id}/{uuid.uuid4()}.{file_extension}"
+        avatar_url = await asyncio.to_thread(
+            upload_file_to_s3, optimized_bytes, object_name, "image/webp"
+        )
+
+        # Update user
+        user_update = models.UserUpdate(avatar_url=avatar_url)
+        user = await user_manager.update(user_update, user, safe=True)
+
+        return user
+    except Exception as e:
+        raise fastapi.HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/profile/{username}", response_model=models.UserRead)

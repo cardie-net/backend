@@ -11,3 +11,6 @@ pytest-asyncio
 httpx
 pytest-cov
 asyncpg
+boto3
+Pillow
+python-multipart

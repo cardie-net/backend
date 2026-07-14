@@ -223,3 +223,35 @@ async def test_get_user_profile_not_found(async_client: AsyncClient):
     assert response.status_code == 404
     data = response.json()
     assert data["detail"] == "User not found"
+
+
+from unittest.mock import patch
+
+
+@pytest.mark.asyncio
+async def test_upload_avatar(async_client: AsyncClient, guest_token1: str):
+    # Create a dummy image
+    import io
+
+    from PIL import Image
+
+    img = Image.new("RGB", (100, 100), color="red")
+    img_byte_arr = io.BytesIO()
+    img.save(img_byte_arr, format="JPEG")
+    img_bytes = img_byte_arr.getvalue()
+
+    files = {"file": ("test.jpg", img_bytes, "image/jpeg")}
+
+    with patch(
+        "src.routers.users.upload_file_to_s3",
+        return_value="http://test-url/avatar.webp",
+    ):
+        response = await async_client.post(
+            "/api/v1/users/me/avatar",
+            headers={"X-Test-Cookie": guest_token1},
+            files=files,
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["avatar_url"] == "http://test-url/avatar.webp"
