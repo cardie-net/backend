@@ -28,6 +28,9 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         if not base_username:
             base_username = "user"
 
+        # truncate to ensure it fits in 32 chars along with any numbers appended
+        base_username = base_username[:26]
+
         username = base_username
         if len(username) < 8:
             padding_length = 8 - len(username)

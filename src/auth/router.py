@@ -60,7 +60,8 @@ def create_auth_router() -> APIRouter:
     ):
         """Create a guest user and return a JWT token."""
         # Generate a unique placeholder email for the guest
-        guest_email = f"guest_{uuid.uuid4().hex}@guest.example.com"
+        guest_id = uuid.uuid4().hex[:20]
+        guest_email = f"guest_{guest_id}@guest.example.com"
         guest_password = uuid.uuid4().hex
 
         user_create = UserCreate(

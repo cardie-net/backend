@@ -21,6 +21,9 @@ async def test_get_me_authenticated(async_client: AsyncClient, guest_token1: str
     assert "is_active" in data
     assert "is_superuser" in data
     assert "is_verified" in data
+    assert "username" in data
+    assert data["username"].startswith("guest_")
+    assert len(data["username"]) <= 32
 
 
 @pytest.mark.asyncio
@@ -98,6 +101,41 @@ async def test_username_auto_generation_long_email(async_client: AsyncClient):
     data = response.json()
     assert data["username"] == "longusername"
     assert data["display_name"] == "longusername"
+
+
+@pytest.mark.asyncio
+async def test_username_auto_generation_very_long_email_truncation(
+    async_client: AsyncClient,
+):
+    long_prefix = "a" * 40
+    response = await async_client.post(
+        "/api/v1/auth/register",
+        json={"email": f"{long_prefix}@example.com", "password": "password123"},
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["username"] == "a" * 26
+    assert data["display_name"] == "a" * 26
+
+
+@pytest.mark.asyncio
+async def test_username_auto_generation_very_long_email_conflict(
+    async_client: AsyncClient,
+):
+    long_prefix = "b" * 40
+    # First user
+    await async_client.post(
+        "/api/v1/auth/register",
+        json={"email": f"{long_prefix}@example.com", "password": "password123"},
+    )
+    # Second user, should get a conflict and append "1"
+    response = await async_client.post(
+        "/api/v1/auth/register",
+        json={"email": f"{long_prefix}@other.com", "password": "password123"},
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["username"] == ("b" * 26) + "1"
 
 
 @pytest.mark.asyncio
