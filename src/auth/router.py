@@ -75,6 +75,6 @@ def create_auth_router() -> APIRouter:
         strategy = get_jwt_strategy()
         token = await strategy.write_token(user)
 
-        return {"access_token": token, "token_type": "bearer"}
+        return await auth_backend.transport.get_login_response(token)
 
     return router

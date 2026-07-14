@@ -1,6 +1,6 @@
 from fastapi_users.authentication import (
     AuthenticationBackend,
-    BearerTransport,
+    CookieTransport,
     JWTStrategy,
 )
 
@@ -8,7 +8,11 @@ from ..config import settings
 
 LIFETIME_SECONDS = 3600 * 24 * 7  # 7 days
 
-bearer_transport = BearerTransport(tokenUrl="/auth/jwt/login")
+cookie_transport = CookieTransport(
+    cookie_name="cardie_session",
+    cookie_max_age=LIFETIME_SECONDS,
+    cookie_secure=settings.FRONTEND_URL.startswith("https"),
+)
 
 
 def get_jwt_strategy() -> JWTStrategy:
@@ -17,6 +21,6 @@ def get_jwt_strategy() -> JWTStrategy:
 
 auth_backend = AuthenticationBackend(
     name="jwt",
-    transport=bearer_transport,
+    transport=cookie_transport,
     get_strategy=get_jwt_strategy,
 )

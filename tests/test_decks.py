@@ -5,13 +5,13 @@ from httpx import AsyncClient
 @pytest.fixture
 async def guest_token(async_client: AsyncClient) -> str:
     response = await async_client.post("/api/v1/auth/guest")
-    return response.json()["access_token"]
+    return response.cookies.get("cardie_session")
 
 
 @pytest.fixture
 async def guest_token2(async_client: AsyncClient) -> str:
     response = await async_client.post("/api/v1/auth/guest")
-    return response.json()["access_token"]
+    return response.cookies.get("cardie_session")
 
 
 @pytest.mark.asyncio
@@ -19,7 +19,7 @@ async def test_create_deck(async_client: AsyncClient, guest_token: str):
     response = await async_client.post(
         "/api/v1/decks",
         json={"name": "Test Deck", "slug": "test-deck", "privacy": "private"},
-        headers={"Authorization": f"Bearer {guest_token}"},
+        headers={"X-Test-Cookie": guest_token},
     )
 
     assert response.status_code == 200
@@ -45,13 +45,13 @@ async def test_create_deck_non_unique_slug(async_client: AsyncClient, guest_toke
     await async_client.post(
         "/api/v1/decks",
         json={"name": "Test Deck", "slug": "test-deck", "privacy": "private"},
-        headers={"Authorization": f"Bearer {guest_token}"},
+        headers={"X-Test-Cookie": guest_token},
     )
 
     response = await async_client.post(
         "/api/v1/decks",
         json={"name": "Another Deck", "slug": "test-deck", "privacy": "private"},
-        headers={"Authorization": f"Bearer {guest_token}"},
+        headers={"X-Test-Cookie": guest_token},
     )
 
     assert response.status_code == 400
@@ -63,7 +63,7 @@ async def test_create_deck_name_too_long(async_client: AsyncClient, guest_token:
     response = await async_client.post(
         "/api/v1/decks",
         json={"name": "A" * 81, "slug": "valid-slug", "privacy": "private"},
-        headers={"Authorization": f"Bearer {guest_token}"},
+        headers={"X-Test-Cookie": guest_token},
     )
     assert response.status_code == 422
 
@@ -91,7 +91,7 @@ async def test_create_deck_invalid_slug(
     response = await async_client.post(
         "/api/v1/decks",
         json={"name": "Valid Name", "slug": invalid_slug, "privacy": "private"},
-        headers={"Authorization": f"Bearer {guest_token}"},
+        headers={"X-Test-Cookie": guest_token},
     )
     assert response.status_code == 422
 
@@ -101,7 +101,7 @@ async def test_create_deck_invalid_privacy(async_client: AsyncClient, guest_toke
     response = await async_client.post(
         "/api/v1/decks",
         json={"name": "Valid Name", "slug": "valid-slug", "privacy": "super-secret"},
-        headers={"Authorization": f"Bearer {guest_token}"},
+        headers={"X-Test-Cookie": guest_token},
     )
     assert response.status_code == 422
 
@@ -118,7 +118,7 @@ async def test_create_deck_non_existent_folder(
             "privacy": "private",
             "folder_id": "00000000-0000-0000-0000-000000999999",
         },
-        headers={"Authorization": f"Bearer {guest_token}"},
+        headers={"X-Test-Cookie": guest_token},
     )
     assert response.status_code in (422, 404)
 
@@ -135,7 +135,7 @@ async def test_create_deck_not_owned_folder(
             "slug": "other-user-folder",
             "privacy": "private",
         },
-        headers={"Authorization": f"Bearer {guest_token2}"},
+        headers={"X-Test-Cookie": guest_token2},
     )
     folder_id = folder_resp.json()["id"]
 
@@ -148,7 +148,7 @@ async def test_create_deck_not_owned_folder(
             "privacy": "private",
             "folder_id": folder_id,
         },
-        headers={"Authorization": f"Bearer {guest_token}"},
+        headers={"X-Test-Cookie": guest_token},
     )
     assert response.status_code in (403, 404, 422)
 
@@ -159,21 +159,21 @@ async def test_delete_deck(async_client: AsyncClient, guest_token: str):
     create_resp = await async_client.post(
         "/api/v1/decks",
         json={"name": "Deck to Delete", "slug": "deck-to-delete", "privacy": "private"},
-        headers={"Authorization": f"Bearer {guest_token}"},
+        headers={"X-Test-Cookie": guest_token},
     )
     deck_id = create_resp.json()["id"]
 
     # Delete deck
     delete_resp = await async_client.delete(
         f"/api/v1/decks/{deck_id}",
-        headers={"Authorization": f"Bearer {guest_token}"},
+        headers={"X-Test-Cookie": guest_token},
     )
     assert delete_resp.status_code == 204
 
     # Verify deck is deleted
     get_resp = await async_client.get(
         f"/api/v1/decks/{deck_id}",
-        headers={"Authorization": f"Bearer {guest_token}"},
+        headers={"X-Test-Cookie": guest_token},
     )
     assert get_resp.status_code == 404
 
@@ -186,14 +186,14 @@ async def test_delete_deck_not_owned(
     create_resp = await async_client.post(
         "/api/v1/decks",
         json={"name": "User 1 Deck", "slug": "user-1-deck", "privacy": "private"},
-        headers={"Authorization": f"Bearer {guest_token}"},
+        headers={"X-Test-Cookie": guest_token},
     )
     deck_id = create_resp.json()["id"]
 
     # Try to delete deck with guest_token2
     delete_resp = await async_client.delete(
         f"/api/v1/decks/{deck_id}",
-        headers={"Authorization": f"Bearer {guest_token2}"},
+        headers={"X-Test-Cookie": guest_token2},
     )
     assert delete_resp.status_code in (403, 404)
 
@@ -202,7 +202,7 @@ async def test_delete_deck_not_owned(
 async def test_delete_deck_not_found(async_client: AsyncClient, guest_token: str):
     delete_resp = await async_client.delete(
         "/api/v1/decks/00000000-0000-0000-0000-000000999999",
-        headers={"Authorization": f"Bearer {guest_token}"},
+        headers={"X-Test-Cookie": guest_token},
     )
     assert delete_resp.status_code == 404
 
@@ -213,7 +213,7 @@ async def test_patch_deck(async_client: AsyncClient, guest_token: str):
     create_resp = await async_client.post(
         "/api/v1/decks",
         json={"name": "Original Deck", "slug": "original-deck", "privacy": "private"},
-        headers={"Authorization": f"Bearer {guest_token}"},
+        headers={"X-Test-Cookie": guest_token},
     )
     deck_id = create_resp.json()["id"]
 
@@ -221,7 +221,7 @@ async def test_patch_deck(async_client: AsyncClient, guest_token: str):
     patch_resp = await async_client.patch(
         f"/api/v1/decks/{deck_id}",
         json={"name": "Patched Deck", "slug": "patched-deck", "privacy": "public"},
-        headers={"Authorization": f"Bearer {guest_token}"},
+        headers={"X-Test-Cookie": guest_token},
     )
     assert patch_resp.status_code == 200
     data = patch_resp.json()
@@ -238,7 +238,7 @@ async def test_patch_deck_not_owned(
     create_resp = await async_client.post(
         "/api/v1/decks",
         json={"name": "User 1 Deck", "slug": "user-1-deck-patch", "privacy": "private"},
-        headers={"Authorization": f"Bearer {guest_token}"},
+        headers={"X-Test-Cookie": guest_token},
     )
     deck_id = create_resp.json()["id"]
 
@@ -246,7 +246,7 @@ async def test_patch_deck_not_owned(
     patch_resp = await async_client.patch(
         f"/api/v1/decks/{deck_id}",
         json={"name": "Hacked Deck"},
-        headers={"Authorization": f"Bearer {guest_token2}"},
+        headers={"X-Test-Cookie": guest_token2},
     )
     assert patch_resp.status_code in (403, 404)
 
@@ -256,7 +256,7 @@ async def test_patch_deck_not_found(async_client: AsyncClient, guest_token: str)
     patch_resp = await async_client.patch(
         "/api/v1/decks/00000000-0000-0000-0000-000000999999",
         json={"name": "Ghost Deck"},
-        headers={"Authorization": f"Bearer {guest_token}"},
+        headers={"X-Test-Cookie": guest_token},
     )
     assert patch_resp.status_code == 404
 
@@ -267,7 +267,7 @@ async def test_patch_deck_folder_id(async_client: AsyncClient, guest_token: str)
     folder_resp = await async_client.post(
         "/api/v1/folders/",
         json={"name": "Folder 1", "slug": "folder-1", "privacy": "private"},
-        headers={"Authorization": f"Bearer {guest_token}"},
+        headers={"X-Test-Cookie": guest_token},
     )
     folder_id = folder_resp.json()["id"]
 
@@ -275,7 +275,7 @@ async def test_patch_deck_folder_id(async_client: AsyncClient, guest_token: str)
     create_resp = await async_client.post(
         "/api/v1/decks",
         json={"name": "Deck 1", "slug": "deck-1-folder", "privacy": "private"},
-        headers={"Authorization": f"Bearer {guest_token}"},
+        headers={"X-Test-Cookie": guest_token},
     )
     deck_id = create_resp.json()["id"]
 
@@ -283,7 +283,7 @@ async def test_patch_deck_folder_id(async_client: AsyncClient, guest_token: str)
     patch_resp = await async_client.patch(
         f"/api/v1/decks/{deck_id}",
         json={"folder_id": folder_id},
-        headers={"Authorization": f"Bearer {guest_token}"},
+        headers={"X-Test-Cookie": guest_token},
     )
     assert patch_resp.status_code == 200
     assert patch_resp.json()["folder_id"] == folder_id
@@ -295,14 +295,14 @@ async def test_patch_deck_non_unique_slug(async_client: AsyncClient, guest_token
     await async_client.post(
         "/api/v1/decks",
         json={"name": "Deck A", "slug": "deck-a", "privacy": "private"},
-        headers={"Authorization": f"Bearer {guest_token}"},
+        headers={"X-Test-Cookie": guest_token},
     )
 
     # Create deck 2
     create_resp = await async_client.post(
         "/api/v1/decks",
         json={"name": "Deck B", "slug": "deck-b", "privacy": "private"},
-        headers={"Authorization": f"Bearer {guest_token}"},
+        headers={"X-Test-Cookie": guest_token},
     )
     deck2_id = create_resp.json()["id"]
 
@@ -310,7 +310,7 @@ async def test_patch_deck_non_unique_slug(async_client: AsyncClient, guest_token
     patch_resp = await async_client.patch(
         f"/api/v1/decks/{deck2_id}",
         json={"slug": "deck-a"},
-        headers={"Authorization": f"Bearer {guest_token}"},
+        headers={"X-Test-Cookie": guest_token},
     )
     assert patch_resp.status_code == 400
 
@@ -343,7 +343,7 @@ async def test_patch_deck_invalid_slug(
             "slug": "valid-slug-for-patch",
             "privacy": "private",
         },
-        headers={"Authorization": f"Bearer {guest_token}"},
+        headers={"X-Test-Cookie": guest_token},
     )
 
     # We might fail to create if the slug is taken from previous tests, let's use a unique slug just in case
@@ -354,7 +354,7 @@ async def test_patch_deck_invalid_slug(
         create_resp = await async_client.post(
             "/api/v1/decks",
             json={"name": "Valid Name", "slug": unique_slug, "privacy": "private"},
-            headers={"Authorization": f"Bearer {guest_token}"},
+            headers={"X-Test-Cookie": guest_token},
         )
 
     deck_id = create_resp.json()["id"]
@@ -363,7 +363,7 @@ async def test_patch_deck_invalid_slug(
     patch_resp = await async_client.patch(
         f"/api/v1/decks/{deck_id}",
         json={"slug": invalid_slug},
-        headers={"Authorization": f"Bearer {guest_token}"},
+        headers={"X-Test-Cookie": guest_token},
     )
     assert patch_resp.status_code == 422
 
@@ -382,7 +382,7 @@ async def test_delete_deck_cascades_cards(
     create_resp = await async_client.post(
         "/api/v1/decks",
         json={"name": "Deck with Cards", "slug": unique_slug, "privacy": "private"},
-        headers={"Authorization": f"Bearer {guest_token}"},
+        headers={"X-Test-Cookie": guest_token},
     )
     deck_id = create_resp.json()["id"]
 
@@ -393,14 +393,14 @@ async def test_delete_deck_cascades_cards(
             "front": [{"type": "text", "content": "front"}],
             "back": [{"type": "text", "content": "back"}],
         },
-        headers={"Authorization": f"Bearer {guest_token}"},
+        headers={"X-Test-Cookie": guest_token},
     )
     card_id = card_resp.json()["id"]
 
     # Delete the deck
     delete_resp = await async_client.delete(
         f"/api/v1/decks/{deck_id}",
-        headers={"Authorization": f"Bearer {guest_token}"},
+        headers={"X-Test-Cookie": guest_token},
     )
     assert delete_resp.status_code == 204
 
@@ -419,7 +419,7 @@ async def test_create_deck_with_properties(async_client: AsyncClient, guest_toke
             "privacy": "private",
             "properties": {"color": "#ffffff"},
         },
-        headers={"Authorization": f"Bearer {guest_token}"},
+        headers={"X-Test-Cookie": guest_token},
     )
     assert response.status_code == 200
     data = response.json()
@@ -428,7 +428,7 @@ async def test_create_deck_with_properties(async_client: AsyncClient, guest_toke
     # Also test retrieve
     get_resp = await async_client.get(
         f"/api/v1/decks/{data['id']}",
-        headers={"Authorization": f"Bearer {guest_token}"},
+        headers={"X-Test-Cookie": guest_token},
     )
     assert get_resp.status_code == 200
     assert get_resp.json().get("properties") == {"color": "#ffffff"}
@@ -445,7 +445,7 @@ async def test_create_deck_empty_properties(
             "slug": "deck-empty-prop",
             "privacy": "private",
         },
-        headers={"Authorization": f"Bearer {guest_token}"},
+        headers={"X-Test-Cookie": guest_token},
     )
     assert response.status_code == 200
     assert "properties" not in response.json() or response.json()["properties"] in (
@@ -467,7 +467,7 @@ async def test_create_deck_invalid_properties(
             "privacy": "private",
             "properties": {"color": 123},
         },
-        headers={"Authorization": f"Bearer {guest_token}"},
+        headers={"X-Test-Cookie": guest_token},
     )
     assert response1.status_code == 422
 
@@ -480,6 +480,6 @@ async def test_create_deck_invalid_properties(
             "privacy": "private",
             "properties": {"invalid_prop": "test"},
         },
-        headers={"Authorization": f"Bearer {guest_token}"},
+        headers={"X-Test-Cookie": guest_token},
     )
     assert response2.status_code == 422

@@ -39,14 +39,14 @@ async def registered_user(async_client: AsyncClient):
         data={"username": email, "password": password},
         headers={"Content-Type": "application/x-www-form-urlencoded"},
     )
-    token = login_resp.json()["access_token"]
+    token = login_resp.cookies.get("cardie_session")
     return {"id": user_id, "token": token}
 
 
 @pytest.fixture
 async def guest_token(async_client: AsyncClient) -> str:
     response = await async_client.post("/api/v1/auth/guest")
-    return response.json()["access_token"]
+    return response.cookies.get("cardie_session")
 
 
 @pytest.mark.asyncio
@@ -59,7 +59,7 @@ async def test_get_folder_items(
     folder_resp = await async_client.post(
         "/api/v1/folders/",
         json={"name": "Parent Folder", "slug": "parent-folder", "privacy": "public"},
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"X-Test-Cookie": token},
     )
     assert folder_resp.status_code == 200
     folder_id = folder_resp.json()["id"]
@@ -73,7 +73,7 @@ async def test_get_folder_items(
             "privacy": "public",
             "parent_id": folder_id,
         },
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"X-Test-Cookie": token},
     )
     assert child_folder_resp.status_code == 200
 
@@ -86,7 +86,7 @@ async def test_get_folder_items(
             "privacy": "public",
             "folder_id": folder_id,
         },
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"X-Test-Cookie": token},
     )
     assert deck_resp.status_code == 200
 
@@ -99,7 +99,7 @@ async def test_get_folder_items(
             "privacy": "unlisted",
             "folder_id": folder_id,
         },
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"X-Test-Cookie": token},
     )
     assert unlisted_deck_resp.status_code == 200
 
@@ -112,14 +112,14 @@ async def test_get_folder_items(
             "privacy": "private",
             "folder_id": child_folder_resp.json()["id"],
         },
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"X-Test-Cookie": token},
     )
     assert private_deck_resp.status_code == 200
 
     # Retrieve folder items for owner
     get_resp = await async_client.get(
         f"/api/v1/folders/{folder_id}/items",
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"X-Test-Cookie": token},
     )
     assert get_resp.status_code == 200
     data = get_resp.json()
@@ -135,7 +135,7 @@ async def test_get_folder_items(
     # Retrieve folder items for guest (another user)
     get_resp_guest = await async_client.get(
         f"/api/v1/folders/{folder_id}/items",
-        headers={"Authorization": f"Bearer {guest_token}"},
+        headers={"X-Test-Cookie": guest_token},
     )
     assert get_resp_guest.status_code == 200
     data_guest = get_resp_guest.json()
@@ -154,20 +154,20 @@ async def test_get_user_items(async_client: AsyncClient, registered_user: dict):
     folder_resp = await async_client.post(
         "/api/v1/folders/",
         json={"name": "User Folder", "slug": "user-folder", "privacy": "public"},
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"X-Test-Cookie": token},
     )
 
     # Create a deck
     deck_resp = await async_client.post(
         "/api/v1/decks/",
         json={"name": "User Deck", "slug": "user-deck", "privacy": "private"},
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"X-Test-Cookie": token},
     )
 
     # Retrieve user items
     get_resp = await async_client.get(
         f"/api/v1/users/{user_id}/items",
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"X-Test-Cookie": token},
     )
 
     assert get_resp.status_code == 200
@@ -198,7 +198,7 @@ async def test_items_properties(async_client: AsyncClient, registered_user: dict
             "privacy": "public",
             "properties": {"color": "#111111"},
         },
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"X-Test-Cookie": token},
     )
     folder_id = folder_resp.json()["id"]
 
@@ -212,13 +212,13 @@ async def test_items_properties(async_client: AsyncClient, registered_user: dict
             "folder_id": folder_id,
             "properties": {"color": "#222222"},
         },
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"X-Test-Cookie": token},
     )
 
     # Retrieve folder items
     get_folder_items = await async_client.get(
         f"/api/v1/folders/{folder_id}/items",
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"X-Test-Cookie": token},
     )
     assert get_folder_items.status_code == 200
     folder_items = get_folder_items.json()
@@ -228,7 +228,7 @@ async def test_items_properties(async_client: AsyncClient, registered_user: dict
     # Retrieve user items
     get_user_items = await async_client.get(
         f"/api/v1/users/{user_id}/items",
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"X-Test-Cookie": token},
     )
     assert get_user_items.status_code == 200
     user_items = get_user_items.json()

@@ -5,13 +5,13 @@ from httpx import AsyncClient
 @pytest.fixture
 async def guest_token1(async_client: AsyncClient) -> str:
     response = await async_client.post("/api/v1/auth/guest")
-    return response.json()["access_token"]
+    return response.cookies.get("cardie_session")
 
 
 @pytest.fixture
 async def guest_token2(async_client: AsyncClient) -> str:
     response = await async_client.post("/api/v1/auth/guest")
-    return response.json()["access_token"]
+    return response.cookies.get("cardie_session")
 
 
 @pytest.fixture
@@ -19,7 +19,7 @@ async def private_deck_id(async_client: AsyncClient, guest_token1: str) -> int:
     response = await async_client.post(
         "/api/v1/decks/",
         json={"name": "Private Deck", "slug": "private-deck", "privacy": "private"},
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     return response.json()["id"]
 
@@ -29,7 +29,7 @@ async def public_deck_id(async_client: AsyncClient, guest_token1: str) -> int:
     response = await async_client.post(
         "/api/v1/decks/",
         json={"name": "Public Deck", "slug": "public-deck", "privacy": "public"},
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     return response.json()["id"]
 
@@ -44,7 +44,7 @@ async def test_create_card_owner_success(
             "front": [{"type": "text", "content": "Front"}],
             "back": [{"type": "text", "content": "Back"}],
         },
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     assert response.status_code == 200
     data = response.json()
@@ -62,8 +62,9 @@ async def test_create_card_non_owner_forbidden(
             "front": [{"type": "text", "content": "Front"}],
             "back": [{"type": "text", "content": "Back"}],
         },
-        headers={"Authorization": f"Bearer {guest_token2}"},
+        headers={"X-Test-Cookie": guest_token2},
     )
+    print("REQ HEADERS:", response.request.headers)
     assert response.status_code == 403
 
 
@@ -77,7 +78,7 @@ async def test_create_card_non_existent_deck(
             "front": [{"type": "text", "content": "Front"}],
             "back": [{"type": "text", "content": "Back"}],
         },
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     assert response.status_code == 404
 
@@ -93,12 +94,12 @@ async def test_read_cards_owner_success(
             "front": [{"type": "text", "content": "Front"}],
             "back": [{"type": "text", "content": "Back"}],
         },
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
 
     response = await async_client.get(
         f"/api/v1/decks/{private_deck_id}/cards/",
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     assert response.status_code == 200
     assert len(response.json()) == 1
@@ -110,8 +111,9 @@ async def test_read_cards_non_owner_forbidden_private_deck(
 ):
     response = await async_client.get(
         f"/api/v1/decks/{private_deck_id}/cards/",
-        headers={"Authorization": f"Bearer {guest_token2}"},
+        headers={"X-Test-Cookie": guest_token2},
     )
+    print("REQ HEADERS:", response.request.headers)
     assert response.status_code == 403
 
 
@@ -121,7 +123,7 @@ async def test_read_cards_non_owner_success_public_deck(
 ):
     response = await async_client.get(
         f"/api/v1/decks/{public_deck_id}/cards/",
-        headers={"Authorization": f"Bearer {guest_token2}"},
+        headers={"X-Test-Cookie": guest_token2},
     )
     assert response.status_code == 200
 
@@ -132,7 +134,7 @@ async def test_read_cards_non_existent_deck(
 ):
     response = await async_client.get(
         "/api/v1/decks/00000000-0000-0000-0000-000000000999/cards/",
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     assert response.status_code == 404
 
@@ -147,7 +149,7 @@ async def test_create_card_invalid_front_data(
             "front": "this should be a list",
             "back": [{"type": "text", "content": "Back"}],
         },
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     assert response.status_code == 422
 
@@ -162,7 +164,7 @@ async def test_create_card_invalid_back_data(
             "front": [{"type": "text", "content": "Front"}],
             "back": "this should be a list",
         },
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     assert response.status_code == 422
 
@@ -176,7 +178,7 @@ async def test_create_card_missing_fields(
         json={
             "front": [{"type": "text", "content": "Front"}],
         },
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     assert response.status_code == 422
 
@@ -192,21 +194,21 @@ async def test_delete_card_owner_success(
             "front": [{"type": "text", "content": "Front"}],
             "back": [{"type": "text", "content": "Back"}],
         },
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     card_id = create_resp.json()["id"]
 
     # Delete the card
     del_resp = await async_client.delete(
         f"/api/v1/decks/{private_deck_id}/cards/{card_id}",
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     assert del_resp.status_code == 204
 
     # Verify it's deleted
     get_resp = await async_client.get(
         f"/api/v1/decks/{private_deck_id}/cards/",
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     assert len(get_resp.json()) == 0
 
@@ -224,13 +226,13 @@ async def test_delete_card_non_owner_forbidden(
             "front": [{"type": "text", "content": "Front"}],
             "back": [{"type": "text", "content": "Back"}],
         },
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     card_id = create_resp.json()["id"]
 
     del_resp = await async_client.delete(
         f"/api/v1/decks/{private_deck_id}/cards/{card_id}",
-        headers={"Authorization": f"Bearer {guest_token2}"},
+        headers={"X-Test-Cookie": guest_token2},
     )
     assert del_resp.status_code == 403
 
@@ -245,7 +247,7 @@ async def test_patch_card_owner_success(
             "front": [{"type": "text", "content": "Old Front"}],
             "back": [{"type": "text", "content": "Old Back"}],
         },
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     card_id = create_resp.json()["id"]
 
@@ -254,7 +256,7 @@ async def test_patch_card_owner_success(
         json={
             "front": [{"type": "text", "content": "New Front"}],
         },
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     assert patch_resp.status_code == 200
     data = patch_resp.json()
@@ -275,7 +277,7 @@ async def test_patch_card_non_owner_forbidden(
             "front": [{"type": "text", "content": "Old Front"}],
             "back": [{"type": "text", "content": "Old Back"}],
         },
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     card_id = create_resp.json()["id"]
 
@@ -284,7 +286,7 @@ async def test_patch_card_non_owner_forbidden(
         json={
             "front": [{"type": "text", "content": "New Front"}],
         },
-        headers={"Authorization": f"Bearer {guest_token2}"},
+        headers={"X-Test-Cookie": guest_token2},
     )
     assert patch_resp.status_code == 403
 
@@ -300,7 +302,7 @@ async def test_reorder_cards_owner_success(
             "front": [{"type": "text", "content": "1"}],
             "back": [{"type": "text", "content": "1"}],
         },
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     c2 = await async_client.post(
         f"/api/v1/decks/{private_deck_id}/cards/",
@@ -308,7 +310,7 @@ async def test_reorder_cards_owner_success(
             "front": [{"type": "text", "content": "2"}],
             "back": [{"type": "text", "content": "2"}],
         },
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     id1 = c1.json()["id"]
     id2 = c2.json()["id"]
@@ -317,14 +319,14 @@ async def test_reorder_cards_owner_success(
     reorder_resp = await async_client.post(
         f"/api/v1/decks/{private_deck_id}/cards/reorder",
         json={"card_ids": [id2, id1]},
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     assert reorder_resp.status_code == 200
 
     # Get cards, check order
     get_resp = await async_client.get(
         f"/api/v1/decks/{private_deck_id}/cards/",
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     cards = get_resp.json()
     assert len(cards) == 2
@@ -345,14 +347,14 @@ async def test_reorder_cards_non_owner_forbidden(
             "front": [{"type": "text", "content": "1"}],
             "back": [{"type": "text", "content": "1"}],
         },
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     id1 = c1.json()["id"]
 
     reorder_resp = await async_client.post(
         f"/api/v1/decks/{private_deck_id}/cards/reorder",
         json={"card_ids": [id1]},
-        headers={"Authorization": f"Bearer {guest_token2}"},
+        headers={"X-Test-Cookie": guest_token2},
     )
     assert reorder_resp.status_code == 403
 
@@ -367,14 +369,14 @@ async def test_reorder_cards_invalid_card_id(
             "front": [{"type": "text", "content": "1"}],
             "back": [{"type": "text", "content": "1"}],
         },
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     id1 = c1.json()["id"]
 
     reorder_resp = await async_client.post(
         f"/api/v1/decks/{private_deck_id}/cards/reorder",
         json={"card_ids": [id1, "00000000-0000-0000-0000-000000000999"]},
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     assert reorder_resp.status_code == 400
 
@@ -389,7 +391,7 @@ async def test_reorder_cards_subset(
             "front": [{"type": "text", "content": "1"}],
             "back": [{"type": "text", "content": "1"}],
         },
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     c2 = await async_client.post(
         f"/api/v1/decks/{private_deck_id}/cards/",
@@ -397,14 +399,14 @@ async def test_reorder_cards_subset(
             "front": [{"type": "text", "content": "2"}],
             "back": [{"type": "text", "content": "2"}],
         },
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     id1 = c1.json()["id"]
 
     reorder_resp = await async_client.post(
         f"/api/v1/decks/{private_deck_id}/cards/reorder",
         json={"card_ids": [id1]},  # Missing c2
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     assert reorder_resp.status_code == 400
 
@@ -420,13 +422,13 @@ async def test_reorder_cards_no_cards(
             "front": [{"type": "text", "content": "1"}],
             "back": [{"type": "text", "content": "1"}],
         },
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
 
     reorder_resp = await async_client.post(
         f"/api/v1/decks/{private_deck_id}/cards/reorder",
         json={"card_ids": []},
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     assert reorder_resp.status_code == 400
 
@@ -441,13 +443,13 @@ async def test_reorder_cards_duplicate_id(
             "front": [{"type": "text", "content": "1"}],
             "back": [{"type": "text", "content": "1"}],
         },
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     id1 = c1.json()["id"]
 
     reorder_resp = await async_client.post(
         f"/api/v1/decks/{private_deck_id}/cards/reorder",
         json={"card_ids": [id1, id1]},
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     assert reorder_resp.status_code == 400

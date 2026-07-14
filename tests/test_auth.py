@@ -9,10 +9,8 @@ from src.auth.user_manager import UserManager
 @pytest.mark.asyncio
 async def test_create_guest_user(async_client: AsyncClient):
     response = await async_client.post("/api/v1/auth/guest")
-    assert response.status_code == 200
-    data = response.json()
-    assert "access_token" in data
-    assert data["token_type"] == "bearer"
+    assert response.status_code == 204
+    assert "cardie_session" in response.cookies
 
 
 @pytest.mark.asyncio
@@ -87,9 +85,8 @@ async def test_login_verified_user(async_client: AsyncClient):
         },
         headers={"Content-Type": "application/x-www-form-urlencoded"},
     )
-    assert response.status_code == 200
-    data = response.json()
-    assert "access_token" in data
+    assert response.status_code == 204
+    assert "cardie_session" in response.cookies
 
 
 @pytest.mark.asyncio

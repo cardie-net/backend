@@ -175,10 +175,15 @@ def create_google_oauth_router() -> APIRouter:
         # Generate JWT
         jwt_token = await strategy.write_token(user)
 
-        # Redirect to frontend callback page with the token
-        response = RedirectResponse(
-            url=_build_frontend_url("/auth/google/callback", {"token": jwt_token})
-        )
+        # Get the login response to set the cookie
+        base_response = await auth_backend.transport.get_login_response(jwt_token)
+
+        # Redirect to frontend home page
+        response = RedirectResponse(url=_build_frontend_url("/"))
+
+        # Copy cookies from the base response
+        for cookie in base_response.headers.getlist("set-cookie"):
+            response.headers.append("set-cookie", cookie)
 
         # Clean up the CSRF cookie
         response.delete_cookie(

@@ -5,14 +5,14 @@ from httpx import AsyncClient
 @pytest.fixture
 async def guest_token1(async_client: AsyncClient) -> str:
     response = await async_client.post("/api/v1/auth/guest")
-    return response.json()["access_token"]
+    return response.cookies.get("cardie_session")
 
 
 @pytest.mark.asyncio
 async def test_get_me_authenticated(async_client: AsyncClient, guest_token1: str):
     response = await async_client.get(
         "/api/v1/users/me",
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     assert response.status_code == 200
     data = response.json()
@@ -160,7 +160,7 @@ async def test_patch_user(async_client: AsyncClient, guest_token1: str):
     token = guest_token1
     response = await async_client.patch(
         "/api/v1/users/me",
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"X-Test-Cookie": token},
         json={"username": "newusername", "display_name": "New Display Name"},
     )
     assert response.status_code == 200
@@ -176,7 +176,7 @@ async def test_patch_user_validation(async_client: AsyncClient, guest_token1: st
     # Invalid username (too short)
     response = await async_client.patch(
         "/api/v1/users/me",
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"X-Test-Cookie": token},
         json={"username": "short"},
     )
     assert response.status_code == 422
@@ -184,7 +184,7 @@ async def test_patch_user_validation(async_client: AsyncClient, guest_token1: st
     # Invalid username (not url safe)
     response = await async_client.patch(
         "/api/v1/users/me",
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"X-Test-Cookie": token},
         json={"username": "invalid username!"},
     )
     assert response.status_code == 422
@@ -192,7 +192,7 @@ async def test_patch_user_validation(async_client: AsyncClient, guest_token1: st
     # Invalid display_name (too long)
     response = await async_client.patch(
         "/api/v1/users/me",
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"X-Test-Cookie": token},
         json={"display_name": "a" * 81},
     )
     assert response.status_code == 422
@@ -203,7 +203,7 @@ async def test_get_user_profile_success(async_client: AsyncClient, guest_token1:
     # First, get the me data to find the generated username
     response = await async_client.get(
         "/api/v1/users/me",
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     assert response.status_code == 200
     user_data = response.json()

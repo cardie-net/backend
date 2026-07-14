@@ -35,6 +35,7 @@ async def create_card(
     deck = await crud.get_deck(db, deck_id=deck_id)
     if not deck:
         raise HTTPException(status_code=404, detail="Deck not found")
+    print(f"DEBUG: deck.user_id={deck.user_id}, user.id={user.id}")
     if deck.user_id != user.id:
         raise HTTPException(status_code=403, detail="Not enough permissions")
     return await crud.create_card_for_deck(db=db, card=card, deck_id=deck_id)
@@ -50,6 +51,7 @@ async def delete_card(
     deck = await crud.get_deck(db, deck_id=deck_id)
     if not deck:
         raise HTTPException(status_code=404, detail="Deck not found")
+    print(f"DEBUG: deck.user_id={deck.user_id}, user.id={user.id}")
     if deck.user_id != user.id:
         raise HTTPException(status_code=403, detail="Not enough permissions")
 
@@ -71,6 +73,7 @@ async def update_card(
     deck = await crud.get_deck(db, deck_id=deck_id)
     if not deck:
         raise HTTPException(status_code=404, detail="Deck not found")
+    print(f"DEBUG: deck.user_id={deck.user_id}, user.id={user.id}")
     if deck.user_id != user.id:
         raise HTTPException(status_code=403, detail="Not enough permissions")
 
@@ -91,6 +94,7 @@ async def reorder_cards(
     deck = await crud.get_deck(db, deck_id=deck_id)
     if not deck:
         raise HTTPException(status_code=404, detail="Deck not found")
+    print(f"DEBUG: deck.user_id={deck.user_id}, user.id={user.id}")
     if deck.user_id != user.id:
         raise HTTPException(status_code=403, detail="Not enough permissions")
 

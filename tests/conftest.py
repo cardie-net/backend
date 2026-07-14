@@ -37,8 +37,15 @@ async def async_client(async_session: AsyncSession) -> AsyncClient:
 
     app.dependency_overrides[get_db] = override_get_db
 
+    class CookieInjectingTransport(ASGITransport):
+        async def handle_async_request(self, request):
+            token = request.headers.get("x-test-cookie")
+            if token:
+                request.headers["cookie"] = f"cardie_session={token}"
+            return await super().handle_async_request(request)
+
     async with AsyncClient(
-        transport=ASGITransport(app=app),
+        transport=CookieInjectingTransport(app=app),
         base_url="http://test",
         follow_redirects=True,
     ) as client:

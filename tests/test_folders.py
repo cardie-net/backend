@@ -5,13 +5,13 @@ from httpx import AsyncClient
 @pytest.fixture
 async def guest_token1(async_client: AsyncClient) -> str:
     response = await async_client.post("/api/v1/auth/guest")
-    return response.json()["access_token"]
+    return response.cookies.get("cardie_session")
 
 
 @pytest.fixture
 async def guest_token2(async_client: AsyncClient) -> str:
     response = await async_client.post("/api/v1/auth/guest")
-    return response.json()["access_token"]
+    return response.cookies.get("cardie_session")
 
 
 @pytest.mark.asyncio
@@ -19,7 +19,7 @@ async def test_create_folder(async_client: AsyncClient, guest_token1: str):
     response = await async_client.post(
         "/api/v1/folders",
         json={"name": "Test Folder", "slug": "test-folder", "privacy": "public"},
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     assert response.status_code == 200
     data = response.json()
@@ -36,7 +36,7 @@ async def test_create_folder_name_too_long(
     response = await async_client.post(
         "/api/v1/folders",
         json={"name": "A" * 81, "slug": "valid-slug", "privacy": "public"},
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     assert response.status_code == 422
 
@@ -64,7 +64,7 @@ async def test_create_folder_invalid_slug(
     response = await async_client.post(
         "/api/v1/folders",
         json={"name": "Valid Name", "slug": invalid_slug, "privacy": "public"},
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     assert response.status_code == 422
 
@@ -76,7 +76,7 @@ async def test_create_folder_invalid_privacy(
     response = await async_client.post(
         "/api/v1/folders",
         json={"name": "Valid Name", "slug": "valid-slug", "privacy": "super-secret"},
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     assert response.status_code == 422
 
@@ -93,7 +93,7 @@ async def test_create_folder_non_existent_parent(
             "privacy": "public",
             "parent_id": "00000000-0000-0000-0000-000000999999",
         },
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     assert response.status_code in (422, 404)
 
@@ -110,7 +110,7 @@ async def test_create_folder_not_owned_parent(
             "slug": "other-user-folder",
             "privacy": "public",
         },
-        headers={"Authorization": f"Bearer {guest_token2}"},
+        headers={"X-Test-Cookie": guest_token2},
     )
     parent_id = parent_resp.json()["id"]
 
@@ -123,7 +123,7 @@ async def test_create_folder_not_owned_parent(
             "privacy": "public",
             "parent_id": parent_id,
         },
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     assert response.status_code in (403, 404, 422)
 
@@ -134,14 +134,14 @@ async def test_delete_folder_success(async_client: AsyncClient, guest_token1: st
     create_resp = await async_client.post(
         "/api/v1/folders",
         json={"name": "To Delete", "slug": "to-delete", "privacy": "public"},
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     folder_id = create_resp.json()["id"]
 
     # Delete folder
     delete_resp = await async_client.delete(
         f"/api/v1/folders/{folder_id}",
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     assert delete_resp.status_code == 200
 
@@ -154,14 +154,14 @@ async def test_delete_folder_not_owned(
     create_resp = await async_client.post(
         "/api/v1/folders",
         json={"name": "Not Yours", "slug": "not-yours", "privacy": "public"},
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     folder_id = create_resp.json()["id"]
 
     # Try to delete with guest_token2
     delete_resp = await async_client.delete(
         f"/api/v1/folders/{folder_id}",
-        headers={"Authorization": f"Bearer {guest_token2}"},
+        headers={"X-Test-Cookie": guest_token2},
     )
     assert delete_resp.status_code in (403, 404)
 
@@ -170,7 +170,7 @@ async def test_delete_folder_not_owned(
 async def test_delete_folder_not_found(async_client: AsyncClient, guest_token1: str):
     delete_resp = await async_client.delete(
         "/api/v1/folders/00000000-0000-0000-0000-000000999999",
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     assert delete_resp.status_code == 404
 
@@ -181,7 +181,7 @@ async def test_patch_folder_success(async_client: AsyncClient, guest_token1: str
     create_resp = await async_client.post(
         "/api/v1/folders",
         json={"name": "Old Name", "slug": "old-slug", "privacy": "public"},
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     folder_id = create_resp.json()["id"]
 
@@ -189,7 +189,7 @@ async def test_patch_folder_success(async_client: AsyncClient, guest_token1: str
     patch_resp = await async_client.patch(
         f"/api/v1/folders/{folder_id}",
         json={"name": "New Name", "slug": "new-slug", "privacy": "private"},
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     assert patch_resp.status_code == 200
     data = patch_resp.json()
@@ -204,7 +204,7 @@ async def test_patch_folder_parent_id(async_client: AsyncClient, guest_token1: s
     parent_resp = await async_client.post(
         "/api/v1/folders",
         json={"name": "Parent", "slug": "parent", "privacy": "public"},
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     parent_id = parent_resp.json()["id"]
 
@@ -212,7 +212,7 @@ async def test_patch_folder_parent_id(async_client: AsyncClient, guest_token1: s
     child_resp = await async_client.post(
         "/api/v1/folders",
         json={"name": "Child", "slug": "child", "privacy": "public"},
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     child_id = child_resp.json()["id"]
 
@@ -220,7 +220,7 @@ async def test_patch_folder_parent_id(async_client: AsyncClient, guest_token1: s
     patch_resp = await async_client.patch(
         f"/api/v1/folders/{child_id}",
         json={"parent_id": parent_id},
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     assert patch_resp.status_code == 200
     assert patch_resp.json()["parent_id"] == parent_id
@@ -234,7 +234,7 @@ async def test_patch_folder_not_owned(
     create_resp = await async_client.post(
         "/api/v1/folders",
         json={"name": "Not Yours", "slug": "not-yours", "privacy": "public"},
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     folder_id = create_resp.json()["id"]
 
@@ -242,7 +242,7 @@ async def test_patch_folder_not_owned(
     patch_resp = await async_client.patch(
         f"/api/v1/folders/{folder_id}",
         json={"name": "Hacked Name"},
-        headers={"Authorization": f"Bearer {guest_token2}"},
+        headers={"X-Test-Cookie": guest_token2},
     )
     assert patch_resp.status_code in (403, 404)
 
@@ -252,7 +252,7 @@ async def test_patch_folder_not_found(async_client: AsyncClient, guest_token1: s
     patch_resp = await async_client.patch(
         "/api/v1/folders/00000000-0000-0000-0000-000000999999",
         json={"name": "New Name"},
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     assert patch_resp.status_code == 404
 
@@ -271,7 +271,7 @@ async def test_delete_folder_cascades_decks_and_cards(
     folder_resp = await async_client.post(
         "/api/v1/folders",
         json={"name": "Folder for Cascades", "slug": unique_slug, "privacy": "private"},
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     folder_id = folder_resp.json()["id"]
 
@@ -284,7 +284,7 @@ async def test_delete_folder_cascades_decks_and_cards(
             "privacy": "private",
             "folder_id": folder_id,
         },
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     deck_id = deck_resp.json()["id"]
 
@@ -295,14 +295,14 @@ async def test_delete_folder_cascades_decks_and_cards(
             "front": [{"type": "text", "content": "front"}],
             "back": [{"type": "text", "content": "back"}],
         },
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     card_id = card_resp.json()["id"]
 
     # Delete folder
     delete_resp = await async_client.delete(
         f"/api/v1/folders/{folder_id}",
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     assert delete_resp.status_code == 200
 
@@ -327,7 +327,7 @@ async def test_create_folder_with_properties(
             "privacy": "public",
             "properties": {"color": "#ff0000"},
         },
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     assert response.status_code == 200
     data = response.json()
@@ -345,7 +345,7 @@ async def test_create_folder_empty_properties(
             "slug": "folder-empty-prop",
             "privacy": "public",
         },
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     assert response.status_code == 200
     assert "properties" not in response.json() or response.json()["properties"] in (
@@ -367,7 +367,7 @@ async def test_create_folder_invalid_properties(
             "privacy": "public",
             "properties": {"color": 123},
         },
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     assert response1.status_code == 422
 
@@ -380,6 +380,6 @@ async def test_create_folder_invalid_properties(
             "privacy": "public",
             "properties": {"invalid_prop": "test"},
         },
-        headers={"Authorization": f"Bearer {guest_token1}"},
+        headers={"X-Test-Cookie": guest_token1},
     )
     assert response2.status_code == 422
