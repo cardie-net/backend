@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     AWS_REGION: str = "us-east-1"
     S3_BUCKET_NAME: str = ""
     AWS_ENDPOINT_URL: str = ""
+    S3_PUBLIC_URL: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"

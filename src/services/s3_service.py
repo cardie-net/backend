@@ -11,6 +11,8 @@ def get_s3_client():
         "region_name": settings.AWS_REGION,
     }
 
+    print(settings.AWS_ACCESS_KEY_ID)
+
     if settings.AWS_ENDPOINT_URL:
         kwargs["endpoint_url"] = settings.AWS_ENDPOINT_URL
         kwargs["config"] = Config(s3={"addressing_style": "path"})
@@ -27,7 +29,10 @@ def upload_file_to_s3(file_bytes: bytes, object_name: str, content_type: str) ->
         ContentType=content_type,
     )
 
-    if settings.AWS_ENDPOINT_URL:
+    if settings.S3_PUBLIC_URL:
+        endpoint = settings.S3_PUBLIC_URL.rstrip("/")
+        return f"https://{settings.S3_BUCKET_NAME}/{object_name}"
+    elif settings.AWS_ENDPOINT_URL:
         endpoint = settings.AWS_ENDPOINT_URL.rstrip("/")
         return f"{endpoint}/{settings.S3_BUCKET_NAME}/{object_name}"
     else:
