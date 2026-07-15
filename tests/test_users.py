@@ -255,3 +255,83 @@ async def test_upload_avatar(async_client: AsyncClient, guest_token1: str):
     assert response.status_code == 200
     data = response.json()
     assert data["avatar_url"] == "http://test-url/avatar.webp"
+
+
+@pytest.mark.asyncio
+async def test_get_user_profile_default_properties(
+    async_client: AsyncClient, guest_token1: str
+):
+    # First, get the me data to find the generated username
+    response = await async_client.get(
+        "/api/v1/users/me",
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    user_data = response.json()
+    username = user_data["username"]
+
+    profile_response = await async_client.get(f"/api/v1/users/profile/{username}")
+    assert profile_response.status_code == 200
+    profile_data = profile_response.json()
+
+    assert "bio" in profile_data
+    assert profile_data["bio"] is None or profile_data["bio"] == ""
+    assert "social_links" in profile_data
+    assert profile_data["social_links"] == {} or profile_data["social_links"] is None
+
+
+@pytest.mark.asyncio
+async def test_patch_user_properties(async_client: AsyncClient, guest_token1: str):
+    token = guest_token1
+    response = await async_client.patch(
+        "/api/v1/users/me",
+        headers={"X-Test-Cookie": token},
+        json={
+            "bio": "This is my new bio!",
+            "social_links": {
+                "instagram": "https://instagram.com/myprofile",
+                "facebook": "https://facebook.com/myprofile",
+            },
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["bio"] == "This is my new bio!"
+    assert data["social_links"]["instagram"] == "https://instagram.com/myprofile"
+    assert data["social_links"]["facebook"] == "https://facebook.com/myprofile"
+
+    # Also verify it updates the profile
+    username = data["username"]
+    profile_response = await async_client.get(f"/api/v1/users/profile/{username}")
+    assert profile_response.status_code == 200
+    profile_data = profile_response.json()
+    assert profile_data["bio"] == "This is my new bio!"
+    assert (
+        profile_data["social_links"]["instagram"] == "https://instagram.com/myprofile"
+    )
+    assert profile_data["social_links"]["facebook"] == "https://facebook.com/myprofile"
+
+
+@pytest.mark.asyncio
+async def test_patch_user_invalid_social_link_url(
+    async_client: AsyncClient, guest_token1: str
+):
+    token = guest_token1
+    response = await async_client.patch(
+        "/api/v1/users/me",
+        headers={"X-Test-Cookie": token},
+        json={"social_links": {"instagram": "not-a-valid-url"}},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_patch_user_invalid_social_media_platform(
+    async_client: AsyncClient, guest_token1: str
+):
+    token = guest_token1
+    response = await async_client.patch(
+        "/api/v1/users/me",
+        headers={"X-Test-Cookie": token},
+        json={"social_links": {"myspace": "https://myspace.com/myprofile"}},
+    )
+    assert response.status_code == 422

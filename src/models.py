@@ -7,7 +7,7 @@ from fastapi_users import schemas
 from fastapi_users_db_sqlmodel import SQLModelBaseOAuthAccount, SQLModelBaseUserDB
 from pydantic import BaseModel, ConfigDict
 from pydantic import Field as PydanticField
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from sqlalchemy import JSON, Column, UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -29,6 +29,56 @@ class OAuthAccount(SQLModelBaseOAuthAccount, table=True):
     user: "User" = Relationship(back_populates="oauth_accounts")
 
 
+# --- User Profile Properties ---
+
+ALLOWED_SOCIAL_PLATFORMS = {
+    "instagram",
+    "facebook",
+    "twitter",
+    "linkedin",
+    "youtube",
+    "tiktok",
+    "github",
+    "website",
+}
+
+
+class SocialLinks(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    instagram: Optional[str] = None
+    facebook: Optional[str] = None
+    twitter: Optional[str] = None
+    linkedin: Optional[str] = None
+    youtube: Optional[str] = None
+    tiktok: Optional[str] = None
+    github: Optional[str] = None
+    website: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_urls(self) -> "SocialLinks":
+        url_pattern = re.compile(r"^https?://[^\s/$.?#].[^\s]*$", re.IGNORECASE)
+        for platform in ALLOWED_SOCIAL_PLATFORMS:
+            value = getattr(self, platform)
+            if value is not None and not url_pattern.match(value):
+                raise ValueError(f"Invalid URL for {platform}: {value}")
+        return self
+
+
+class UserProperties(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    bio: Optional[str] = None
+    social_links: Optional[SocialLinks] = None
+
+    @field_validator("bio")
+    @classmethod
+    def validate_bio(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and len(v) > 500:
+            raise ValueError("Bio must be 500 characters or fewer")
+        return v
+
+
 # --- User DB Model ---
 
 
@@ -42,6 +92,7 @@ class User(SQLModelBaseUserDB, table=True):
     username: str = Field(unique=True, index=True, max_length=32)
     display_name: str = Field(max_length=80)
     avatar_url: Optional[str] = Field(default=None)
+    properties: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
 
     oauth_accounts: List[OAuthAccount] = Relationship(
         back_populates="user",
@@ -65,6 +116,8 @@ class UserRead(schemas.BaseUser[uuid.UUID]):
     username: str
     display_name: str
     avatar_url: Optional[str] = None
+    bio: Optional[str] = None
+    social_links: Optional[Dict[str, str]] = None
 
 
 class UserCreate(schemas.BaseUserCreate):
@@ -81,6 +134,8 @@ class UserUpdate(schemas.BaseUserUpdate):
         default=None, min_length=1, max_length=80
     )
     avatar_url: Optional[str] = None
+    bio: Optional[str] = PydanticField(default=None, max_length=500)
+    social_links: Optional[SocialLinks] = None
 
 
 # --- Enums ---
