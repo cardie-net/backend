@@ -30,6 +30,117 @@ async def test_create_folder(async_client: AsyncClient, guest_token1: str):
 
 
 @pytest.mark.asyncio
+async def test_create_folder_without_slug(async_client: AsyncClient, guest_token1: str):
+    response = await async_client.post(
+        "/api/v1/folders",
+        json={"name": "Test Folder Without Slug", "privacy": "public"},
+        headers={"X-Test-Cookie": guest_token1},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["name"] == "Test Folder Without Slug"
+    assert "slug" in data
+    assert len(data["slug"]) >= 8
+    import re
+
+    assert re.match(r"^[a-zA-Z0-9_-]+$", data["slug"])
+    assert "id" in data
+
+
+@pytest.mark.asyncio
+async def test_create_folder_without_slug_unique(
+    async_client: AsyncClient, guest_token1: str
+):
+    response1 = await async_client.post(
+        "/api/v1/folders",
+        json={"name": "Duplicate Name", "privacy": "public"},
+        headers={"X-Test-Cookie": guest_token1},
+    )
+
+    response2 = await async_client.post(
+        "/api/v1/folders",
+        json={"name": "Duplicate Name", "privacy": "public"},
+        headers={"X-Test-Cookie": guest_token1},
+    )
+
+    assert response1.status_code == 200
+    assert response2.status_code == 200
+    assert response1.status_code == 200
+    assert response2.status_code == 200
+    assert response1.json()["slug"] != response2.json()["slug"]
+
+
+@pytest.mark.parametrize(
+    "name, expected_min_len, expected_max_len",
+    [
+        ("A" * 80, 8, 80),  # Too long, should be cut off
+        ("A", 8, 80),  # Too short, should be padded
+        ("Hello World! @#$ 😜", 8, 80),  # Unsafe chars, should be removed
+        ("!@#$%^", 8, 80),  # Only unsafe chars, should fallback and pad
+    ],
+)
+@pytest.mark.asyncio
+async def test_create_folder_without_slug_edge_cases(
+    async_client: AsyncClient,
+    guest_token1: str,
+    name: str,
+    expected_min_len: int,
+    expected_max_len: int,
+):
+    response = await async_client.post(
+        "/api/v1/folders",
+        json={"name": name, "privacy": "public"},
+        headers={"X-Test-Cookie": guest_token1},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    slug = data["slug"]
+
+    assert expected_min_len <= len(slug) <= expected_max_len
+    import re
+
+    # Must only contain lowercase alphanumeric characters and hyphens/underscores
+    assert re.match(r"^[a-zA-Z0-9_-]+$", slug)
+
+
+@pytest.mark.asyncio
+async def test_create_folder_without_slug_uniqueness_max_length(
+    async_client: AsyncClient, guest_token1: str
+):
+    name = "B" * 80  # Max length name
+
+    # First folder
+    response1 = await async_client.post(
+        "/api/v1/folders",
+        json={"name": name, "privacy": "public"},
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    assert response1.status_code == 200
+    slug1 = response1.json()["slug"]
+    assert len(slug1) <= 80
+
+    # Second folder, same name
+    response2 = await async_client.post(
+        "/api/v1/folders",
+        json={"name": name, "privacy": "public"},
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    assert response2.status_code == 200
+    slug2 = response2.json()["slug"]
+
+    assert slug1 != slug2
+    assert len(slug2) <= 80
+
+    # Verify both slugs have the valid pattern
+    import re
+
+    assert re.match(r"^[a-zA-Z0-9_-]+$", slug1)
+    assert re.match(r"^[a-zA-Z0-9_-]+$", slug2)
+
+
+@pytest.mark.asyncio
 async def test_create_folder_name_too_long(
     async_client: AsyncClient, guest_token1: str
 ):

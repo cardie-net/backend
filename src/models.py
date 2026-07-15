@@ -192,7 +192,17 @@ class FolderBase(SQLModel):
 
 
 class FolderCreate(FolderBase):
+    slug: Optional[str] = Field(default=None, max_length=80)
     properties: Optional[ItemProperties] = None
+
+    @field_validator("slug")
+    @classmethod
+    def validate_slug_create(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        if not re.match(r"^[a-zA-Z0-9_-]+$", v):
+            raise ValueError("Invalid slug")
+        return v
 
 
 class FolderUpdate(BaseModel):
@@ -265,7 +275,17 @@ class DeckBase(SQLModel):
 
 
 class DeckCreate(DeckBase):
+    slug: Optional[str] = Field(default=None, max_length=80)
     properties: Optional[ItemProperties] = None
+
+    @field_validator("slug")
+    @classmethod
+    def validate_slug_create(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        if not re.match(r"^[a-zA-Z0-9_-]+$", v):
+            raise ValueError("Invalid slug")
+        return v
 
 
 class DeckUpdate(BaseModel):

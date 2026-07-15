@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from .. import models
+from ..utils import generate_unique_slug
 
 
 async def get_decks_for_user(
@@ -22,7 +23,12 @@ async def get_decks_for_user(
 async def create_deck_for_user(
     db: AsyncSession, deck: models.DeckCreate, user_id: uuid.UUID
 ):
-    db_deck = models.Deck(**deck.model_dump(), user_id=user_id)
+    deck_data = deck.model_dump()
+    if not deck_data.get("slug"):
+        deck_data["slug"] = await generate_unique_slug(
+            db, models.Deck, user_id, deck.name
+        )
+    db_deck = models.Deck(**deck_data, user_id=user_id)
     db.add(db_deck)
     await db.commit()
     await db.refresh(db_deck)

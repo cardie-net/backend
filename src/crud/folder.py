@@ -5,6 +5,7 @@ from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
 from .. import models
+from ..utils import generate_unique_slug
 
 
 async def get_folders_for_user(
@@ -23,7 +24,12 @@ async def get_folders_for_user(
 async def create_folder_for_user(
     db: AsyncSession, folder: models.FolderCreate, user_id: uuid.UUID
 ):
-    db_folder = models.Folder(**folder.model_dump(), user_id=user_id)
+    folder_data = folder.model_dump()
+    if not folder_data.get("slug"):
+        folder_data["slug"] = await generate_unique_slug(
+            db, models.Folder, user_id, folder.name
+        )
+    db_folder = models.Folder(**folder_data, user_id=user_id)
     db.add(db_folder)
     await db.commit()
     await db.refresh(db_folder)

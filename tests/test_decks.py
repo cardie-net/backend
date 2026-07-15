@@ -30,6 +30,117 @@ async def test_create_deck(async_client: AsyncClient, guest_token: str):
 
 
 @pytest.mark.asyncio
+async def test_create_deck_without_slug(async_client: AsyncClient, guest_token: str):
+    response = await async_client.post(
+        "/api/v1/decks",
+        json={"name": "Test Deck Without Slug", "privacy": "private"},
+        headers={"X-Test-Cookie": guest_token},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["name"] == "Test Deck Without Slug"
+    assert "slug" in data
+    assert len(data["slug"]) >= 8
+    import re
+
+    assert re.match(r"^[a-zA-Z0-9_-]+$", data["slug"])
+    assert "id" in data
+
+
+@pytest.mark.asyncio
+async def test_create_deck_without_slug_unique(
+    async_client: AsyncClient, guest_token: str
+):
+    response1 = await async_client.post(
+        "/api/v1/decks",
+        json={"name": "Duplicate Name", "privacy": "private"},
+        headers={"X-Test-Cookie": guest_token},
+    )
+
+    response2 = await async_client.post(
+        "/api/v1/decks",
+        json={"name": "Duplicate Name", "privacy": "private"},
+        headers={"X-Test-Cookie": guest_token},
+    )
+
+    assert response1.status_code == 200
+    assert response2.status_code == 200
+    assert response1.status_code == 200
+    assert response2.status_code == 200
+    assert response1.json()["slug"] != response2.json()["slug"]
+
+
+@pytest.mark.parametrize(
+    "name, expected_min_len, expected_max_len",
+    [
+        ("A" * 80, 8, 80),  # Too long, should be cut off
+        ("A", 8, 80),  # Too short, should be padded
+        ("Hello World! @#$ 😜", 8, 80),  # Unsafe chars, should be removed
+        ("!@#$%^", 8, 80),  # Only unsafe chars, should fallback and pad
+    ],
+)
+@pytest.mark.asyncio
+async def test_create_deck_without_slug_edge_cases(
+    async_client: AsyncClient,
+    guest_token: str,
+    name: str,
+    expected_min_len: int,
+    expected_max_len: int,
+):
+    response = await async_client.post(
+        "/api/v1/decks",
+        json={"name": name, "privacy": "private"},
+        headers={"X-Test-Cookie": guest_token},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    slug = data["slug"]
+
+    assert expected_min_len <= len(slug) <= expected_max_len
+    import re
+
+    # Must only contain lowercase alphanumeric characters and hyphens/underscores
+    assert re.match(r"^[a-zA-Z0-9_-]+$", slug)
+
+
+@pytest.mark.asyncio
+async def test_create_deck_without_slug_uniqueness_max_length(
+    async_client: AsyncClient, guest_token: str
+):
+    name = "B" * 80  # Max length name
+
+    # First deck
+    response1 = await async_client.post(
+        "/api/v1/decks",
+        json={"name": name, "privacy": "private"},
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert response1.status_code == 200
+    slug1 = response1.json()["slug"]
+    assert len(slug1) <= 80
+
+    # Second deck, same name
+    response2 = await async_client.post(
+        "/api/v1/decks",
+        json={"name": name, "privacy": "private"},
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert response2.status_code == 200
+    slug2 = response2.json()["slug"]
+
+    assert slug1 != slug2
+    assert len(slug2) <= 80
+
+    # Verify both slugs have the valid pattern
+    import re
+
+    assert re.match(r"^[a-zA-Z0-9_-]+$", slug1)
+    assert re.match(r"^[a-zA-Z0-9_-]+$", slug2)
+
+
+@pytest.mark.asyncio
 async def test_unauthorized_deck_creation(async_client: AsyncClient):
     response = await async_client.post(
         "/api/v1/decks",
