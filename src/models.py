@@ -3,8 +3,6 @@ import uuid
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Union
 
-from fastapi_users import schemas
-from fastapi_users_db_sqlmodel import SQLModelBaseOAuthAccount, SQLModelBaseUserDB
 from pydantic import BaseModel, ConfigDict
 from pydantic import Field as PydanticField
 from pydantic import field_validator, model_validator
@@ -25,7 +23,15 @@ CardElement = Union[TextElement]
 # --- OAuth Account ---
 
 
-class OAuthAccount(SQLModelBaseOAuthAccount, table=True):
+class OAuthAccount(SQLModel, table=True):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    oauth_name: str = Field(index=True)
+    access_token: str
+    expires_at: Optional[int] = None
+    refresh_token: Optional[str] = None
+    account_id: str = Field(index=True)
+    account_email: str
+    user_id: uuid.UUID = Field(foreign_key="user.id", index=True)
     user: "User" = Relationship(back_populates="oauth_accounts")
 
 
@@ -82,13 +88,20 @@ class UserProperties(BaseModel):
 # --- User DB Model ---
 
 
-class User(SQLModelBaseUserDB, table=True):
+class User(SQLModel, table=True):
     __tablename__ = "user"
 
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    email: str = Field(unique=True, index=True)
+    hashed_password: str
+    is_active: bool = Field(default=True)
+    is_superuser: bool = Field(default=False)
+    is_verified: bool = Field(default=False)
     is_guest: bool = Field(default=False)
     email_verification_token: Optional[str] = Field(
         default=None, index=True, unique=True
     )
+    reset_password_token: Optional[str] = Field(default=None, index=True, unique=True)
     username: str = Field(unique=True, index=True, max_length=32)
     display_name: str = Field(max_length=80)
     avatar_url: Optional[str] = Field(default=None)
@@ -111,7 +124,12 @@ class User(SQLModelBaseUserDB, table=True):
 # --- User Schemas (Pydantic, not table models) ---
 
 
-class UserRead(schemas.BaseUser[uuid.UUID]):
+class UserRead(BaseModel):
+    id: uuid.UUID
+    email: str
+    is_active: bool
+    is_superuser: bool
+    is_verified: bool
     is_guest: bool
     username: str
     display_name: str
@@ -120,13 +138,16 @@ class UserRead(schemas.BaseUser[uuid.UUID]):
     social_links: Optional[Dict[str, str]] = None
 
 
-class UserCreate(schemas.BaseUserCreate):
+class UserCreate(BaseModel):
+    email: str
+    password: str
     is_guest: bool = False
     username: Optional[str] = None
     display_name: Optional[str] = None
 
 
-class UserUpdate(schemas.BaseUserUpdate):
+class UserUpdate(BaseModel):
+    password: Optional[str] = None
     username: Optional[str] = PydanticField(
         default=None, min_length=8, max_length=32, pattern=r"^[a-zA-Z0-9_-]+$"
     )

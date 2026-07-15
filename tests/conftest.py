@@ -59,5 +59,5 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def mock_send_email():
-    with patch("src.auth.user_manager.send_email") as mock:
+    with patch("src.auth.service.send_email") as mock:
         yield mock

@@ -3,12 +3,13 @@ import uuid
 from typing import Dict, List, Optional, Union
 
 import fastapi
-from fastapi import APIRouter, Depends
+import sqlalchemy.exc
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import crud, models
 from ..auth.router import current_active_user
-from ..auth.user_manager import UserManager, get_user_manager
+from ..auth.utils import get_password_hash
 from ..database import get_db
 from ..services.image_service import optimize_image
 from ..services.s3_service import (
@@ -20,11 +21,9 @@ from ..services.s3_service import (
 router = APIRouter(prefix="/users", tags=["users"])
 
 
-def _user_read_with_properties(user: models.User) -> dict:
-    """Build a UserRead-compatible dict that includes bio and social_links
-    extracted from the user's properties JSON column."""
+def _user_to_dict(user: models.User) -> dict:
     props = user.properties or {}
-    data = {
+    return {
         "id": user.id,
         "email": user.email,
         "is_active": user.is_active,
@@ -37,69 +36,64 @@ def _user_read_with_properties(user: models.User) -> dict:
         "bio": props.get("bio"),
         "social_links": props.get("social_links"),
     }
-    return data
 
 
 @router.get("/me", response_model=models.UserRead)
 async def get_current_user(user: models.User = Depends(current_active_user)):
-    return _user_read_with_properties(user)
+    return _user_to_dict(user)
 
 
 @router.patch("/me", response_model=models.UserRead)
 async def update_current_user(
     user_update: models.UserUpdate,
     user: models.User = Depends(current_active_user),
-    user_manager: UserManager = Depends(get_user_manager),
+    db: AsyncSession = Depends(get_db),
 ):
-    # Extract bio and social_links before passing to fastapi-users
-    bio = user_update.bio
-    social_links = user_update.social_links
+    update_data = user_update.model_dump(exclude_unset=True)
 
-    needs_properties_update = bio is not None or social_links is not None
+    bio = update_data.pop("bio", None)
+    social_links = update_data.pop("social_links", None)
+    needs_properties_update = (
+        "bio" in user_update.model_fields_set
+        or "social_links" in user_update.model_fields_set
+    )
 
     if needs_properties_update:
         current_props = dict(user.properties) if user.properties else {}
-        if bio is not None:
+        if "bio" in user_update.model_fields_set:
             current_props["bio"] = bio
-        if social_links is not None:
-            # Store as a plain dict (only non-None values)
-            current_props["social_links"] = {
-                k: v for k, v in social_links.model_dump().items() if v is not None
-            }
-
-        # Directly update properties on the user object
+        if "social_links" in user_update.model_fields_set:
+            current_props["social_links"] = (
+                {k: v for k, v in social_links.items() if v is not None}
+                if social_links
+                else None
+            )
         user.properties = current_props
-        session = user_manager.user_db.session
-        session.add(user)
-        await session.commit()
-        await session.refresh(user)
 
-    # Build a clean UserUpdate without bio/social_links for fastapi-users
-    update_dict = user_update.model_dump(exclude_unset=True)
-    update_dict.pop("bio", None)
-    update_dict.pop("social_links", None)
-    clean_update = models.UserUpdate(**update_dict)
+    for key, value in update_data.items():
+        if key == "password" and value:
+            user.hashed_password = get_password_hash(value)
+        else:
+            setattr(user, key, value)
 
     try:
-        user = await user_manager.update(clean_update, user, safe=True)
-        return _user_read_with_properties(user)
-    except Exception as e:
-        import sqlalchemy.exc
-        from fastapi import HTTPException, status
-
-        if isinstance(e, sqlalchemy.exc.IntegrityError):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="USERNAME_ALREADY_EXISTS",
-            )
-        raise e
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+        return _user_to_dict(user)
+    except sqlalchemy.exc.IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="USERNAME_ALREADY_EXISTS",
+        )
 
 
 @router.post("/me/avatar", response_model=models.UserRead)
 async def upload_avatar(
     file: fastapi.UploadFile = fastapi.File(...),
     user: models.User = Depends(current_active_user),
-    user_manager: UserManager = Depends(get_user_manager),
+    db: AsyncSession = Depends(get_db),
 ):
     if not file.content_type.startswith("image/"):
         raise fastapi.HTTPException(status_code=400, detail="File must be an image")
@@ -124,10 +118,12 @@ async def upload_avatar(
         )
 
         # Update user
-        user_update = models.UserUpdate(avatar_url=avatar_url)
-        user = await user_manager.update(user_update, user, safe=True)
+        user.avatar_url = avatar_url
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
 
-        return _user_read_with_properties(user)
+        return _user_to_dict(user)
     except Exception as e:
         raise fastapi.HTTPException(status_code=500, detail=str(e))
 
@@ -135,19 +131,18 @@ async def upload_avatar(
 @router.delete("/me/avatar", response_model=models.UserRead)
 async def remove_avatar(
     user: models.User = Depends(current_active_user),
-    user_manager: UserManager = Depends(get_user_manager),
+    db: AsyncSession = Depends(get_db),
 ):
     if user.avatar_url:
         old_object_name = extract_object_name_from_url(user.avatar_url)
         if old_object_name:
             await asyncio.to_thread(delete_file_from_s3, old_object_name)
 
-        user_update = models.UserUpdate(avatar_url=None)
-        # Using safe=False or safe=True depending on if fastapi-users allows None.
-        # But wait, fastapi-users Pydantic models with `None` might ignore the update if unset.
-        # So we create dict explicitly if needed, but user_update(avatar_url=None) is fine.
-        user = await user_manager.update(user_update, user, safe=True)
-    return _user_read_with_properties(user)
+        user.avatar_url = None
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+    return _user_to_dict(user)
 
 
 @router.get("/profile/{username}", response_model=models.UserRead)
@@ -164,7 +159,7 @@ async def get_user_profile(
     user = result.scalars().first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    return _user_read_with_properties(user)
+    return _user_to_dict(user)
 
 
 @router.get(

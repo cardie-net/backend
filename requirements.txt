@@ -2,9 +2,9 @@ fastapi
 uvicorn[standard]
 sqlmodel
 aiosqlite
-fastapi-users[sqlalchemy]
+passlib[bcrypt]
+PyJWT
 httpx-oauth
-fastapi_users_db_sqlmodel
 pydantic-settings
 pytest
 pytest-asyncio

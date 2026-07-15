@@ -6,25 +6,22 @@ replaces that with a flow that redirects the browser to the frontend with
 the JWT token as a URL parameter.
 """
 
+import datetime
 import secrets
 from urllib.parse import urlencode
 
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import RedirectResponse
-from fastapi_users import models
-from fastapi_users.authentication import Strategy
-from fastapi_users.exceptions import UserAlreadyExists
-from fastapi_users.jwt import decode_jwt, generate_jwt
-from fastapi_users.manager import BaseUserManager
-from fastapi_users.router.common import ErrorCode
 from httpx_oauth.integrations.fastapi import OAuth2AuthorizeCallback
 from httpx_oauth.oauth2 import OAuth2Token
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import settings
-from .backend import auth_backend
+from ..database import get_db
 from .oauth import google_oauth_client
-from .user_manager import UserManager, get_user_manager
+from .service import handle_oauth_callback
+from .utils import COOKIE_NAME, create_access_token
 
 STATE_TOKEN_AUDIENCE = "fastapi-users:oauth-state"
 CSRF_TOKEN_KEY = "csrftoken"
@@ -35,7 +32,10 @@ CALLBACK_ROUTE_NAME = "oauth:google.jwt.callback"
 
 def _generate_state_token(data: dict[str, str], lifetime_seconds: int = 3600) -> str:
     data["aud"] = STATE_TOKEN_AUDIENCE
-    return generate_jwt(data, settings.SECRET_KEY, lifetime_seconds)
+    data["exp"] = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(
+        seconds=lifetime_seconds
+    )
+    return jwt.encode(data, settings.SECRET_KEY, algorithm="HS256")
 
 
 def _generate_csrf_token() -> str:
@@ -94,15 +94,19 @@ def create_google_oauth_router() -> APIRouter:
         access_token_state: tuple[OAuth2Token, str] = Depends(
             oauth2_authorize_callback
         ),
-        user_manager: UserManager = Depends(get_user_manager),
-        strategy: Strategy[models.UP, models.ID] = Depends(auth_backend.get_strategy),
+        db: AsyncSession = Depends(get_db),
     ):
         """Handle Google's OAuth callback and redirect to the frontend with a JWT."""
         token, state = access_token_state
 
         # Validate state token
         try:
-            state_data = decode_jwt(state, settings.SECRET_KEY, [STATE_TOKEN_AUDIENCE])
+            state_data = jwt.decode(
+                state,
+                settings.SECRET_KEY,
+                audience=STATE_TOKEN_AUDIENCE,
+                algorithms=["HS256"],
+            )
         except jwt.DecodeError:
             return RedirectResponse(
                 url=_build_frontend_url("/login", {"error": "oauth_invalid_state"})
@@ -149,20 +153,19 @@ def create_google_oauth_router() -> APIRouter:
                 url=_build_frontend_url("/login", {"error": "oauth_no_email"})
             )
 
-        # Create or retrieve user via fastapi-users' oauth_callback
+        # Create or retrieve user via service
         try:
-            user = await user_manager.oauth_callback(
-                google_oauth_client.name,
-                token["access_token"],
-                account_id,
-                account_email,
-                token.get("expires_at"),
-                token.get("refresh_token"),
-                request,
-                associate_by_email=True,
-                is_verified_by_default=True,
+            user = await handle_oauth_callback(
+                db=db,
+                oauth_name=google_oauth_client.name,
+                access_token=token["access_token"],
+                account_id=account_id,
+                account_email=account_email,
+                expires_at=token.get("expires_at"),
+                refresh_token=token.get("refresh_token"),
             )
-        except UserAlreadyExists:
+        except Exception as e:
+            print(f"OAuth callback failed: {e}")
             return RedirectResponse(
                 url=_build_frontend_url("/login", {"error": "oauth_user_exists"})
             )
@@ -173,17 +176,20 @@ def create_google_oauth_router() -> APIRouter:
             )
 
         # Generate JWT
-        jwt_token = await strategy.write_token(user)
-
-        # Get the login response to set the cookie
-        base_response = await auth_backend.transport.get_login_response(jwt_token)
+        jwt_token = create_access_token(user.id)
 
         # Redirect to frontend home page
         response = RedirectResponse(url=_build_frontend_url("/"))
 
-        # Copy cookies from the base response
-        for cookie in base_response.headers.getlist("set-cookie"):
-            response.headers.append("set-cookie", cookie)
+        # Set cookie directly
+        response.set_cookie(
+            COOKIE_NAME,
+            jwt_token,
+            max_age=3600 * 24 * 7,
+            httponly=True,
+            samesite="lax",
+            secure=False,
+        )
 
         # Clean up the CSRF cookie
         response.delete_cookie(
