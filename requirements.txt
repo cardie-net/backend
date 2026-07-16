@@ -14,3 +14,4 @@ asyncpg
 boto3
 Pillow
 python-multipart
+email-validator
