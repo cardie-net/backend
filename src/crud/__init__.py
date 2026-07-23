@@ -10,6 +10,7 @@ from .deck import (
     create_deck_for_user,
     delete_deck,
     get_deck,
+    get_deck_by_username_and_slug,
     get_decks_for_user,
     update_deck,
 )
@@ -41,4 +42,5 @@ __all__ = [
     "get_user_items",
     "delete_deck",
     "update_deck",
+    "get_deck_by_username_and_slug",
 ]

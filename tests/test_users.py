@@ -335,3 +335,120 @@ async def test_patch_user_invalid_social_media_platform(
         json={"social_links": {"myspace": "https://myspace.com/myprofile"}},
     )
     assert response.status_code == 422
+
+
+@pytest.fixture
+async def guest_token2(async_client: AsyncClient) -> str:
+    response = await async_client.post("/api/v1/auth/guest")
+    return response.cookies.get("cardie_session")
+
+
+@pytest.mark.asyncio
+async def test_get_user_deck_by_slug_public(
+    async_client: AsyncClient, guest_token1: str
+):
+    # Get user profile to get username
+    me_resp = await async_client.get(
+        "/api/v1/users/me",
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    username = me_resp.json()["username"]
+
+    # Create a public deck
+    deck_resp = await async_client.post(
+        "/api/v1/decks",
+        json={"name": "Public Deck", "slug": "public-deck", "privacy": "public"},
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    deck_slug = deck_resp.json()["slug"]
+
+    # Retrieve deck by username and slug without auth
+    response = await async_client.get(
+        f"/api/v1/users/profile/{username}/decks/{deck_slug}"
+    )
+    assert response.status_code == 200
+    assert response.json()["name"] == "Public Deck"
+
+
+@pytest.mark.asyncio
+async def test_get_user_deck_by_slug_private_owner(
+    async_client: AsyncClient, guest_token1: str
+):
+    # Get user profile to get username
+    me_resp = await async_client.get(
+        "/api/v1/users/me",
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    username = me_resp.json()["username"]
+
+    # Create a private deck
+    deck_resp = await async_client.post(
+        "/api/v1/decks",
+        json={"name": "Private Deck", "slug": "private-deck", "privacy": "private"},
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    deck_slug = deck_resp.json()["slug"]
+
+    # Retrieve deck by username and slug with owner's token
+    response = await async_client.get(
+        f"/api/v1/users/profile/{username}/decks/{deck_slug}",
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    assert response.status_code == 200
+    assert response.json()["name"] == "Private Deck"
+
+
+@pytest.mark.asyncio
+async def test_get_user_deck_by_slug_private_other(
+    async_client: AsyncClient, guest_token1: str, guest_token2: str
+):
+    # Get user profile to get username
+    me_resp = await async_client.get(
+        "/api/v1/users/me",
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    username = me_resp.json()["username"]
+
+    # Create a private deck
+    import uuid
+
+    slug_rand = uuid.uuid4().hex[:8]
+    deck_resp = await async_client.post(
+        "/api/v1/decks",
+        json={
+            "name": "Private Deck Other",
+            "slug": f"private-deck-{slug_rand}",
+            "privacy": "private",
+        },
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    deck_slug = deck_resp.json()["slug"]
+
+    # Retrieve deck without auth
+    resp_unauth = await async_client.get(
+        f"/api/v1/users/profile/{username}/decks/{deck_slug}"
+    )
+    assert resp_unauth.status_code == 403
+
+    # Retrieve deck with different user's auth
+    resp_other = await async_client.get(
+        f"/api/v1/users/profile/{username}/decks/{deck_slug}",
+        headers={"X-Test-Cookie": guest_token2},
+    )
+    assert resp_other.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_get_user_deck_by_slug_not_found(
+    async_client: AsyncClient, guest_token1: str
+):
+    me_resp = await async_client.get(
+        "/api/v1/users/me",
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    username = me_resp.json()["username"]
+
+    response = await async_client.get(
+        f"/api/v1/users/profile/{username}/decks/non-existent-slug"
+    )
+    assert response.status_code == 404
