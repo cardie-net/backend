@@ -39,6 +39,16 @@ async def get_deck(db: AsyncSession, deck_id: uuid.UUID):
     return await db.get(models.Deck, deck_id)
 
 
+async def get_deck_by_username_and_slug(db: AsyncSession, username: str, slug: str):
+    statement = (
+        select(models.Deck)
+        .join(models.User, models.Deck.user_id == models.User.id)
+        .where(models.User.username == username, models.Deck.slug == slug)
+    )
+    result = await db.execute(statement)
+    return result.scalars().first()
+
+
 async def delete_deck(db: AsyncSession, db_deck: models.Deck):
     await db.delete(db_deck)
     await db.commit()

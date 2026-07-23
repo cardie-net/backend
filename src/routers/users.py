@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import crud, models
 from ..auth.router import current_active_user
-from ..auth.utils import get_password_hash
+from ..auth.utils import get_optional_current_user, get_password_hash
 from ..database import get_db
 from ..services.image_service import optimize_image
 from ..services.s3_service import (
@@ -160,6 +160,31 @@ async def get_user_profile(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return _user_to_dict(user)
+
+
+@router.get("/profile/{username}/decks/{deck_slug}", response_model=models.DeckRead)
+async def get_user_deck_by_slug(
+    username: str,
+    deck_slug: str,
+    user: Optional[models.User] = Depends(get_optional_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    db_deck = await crud.get_deck_by_username_and_slug(
+        db, username=username, slug=deck_slug
+    )
+    if not db_deck:
+        raise HTTPException(status_code=404, detail="Deck not found")
+
+    # Optional authentication for privacy check
+    current_user_id = user.id if user else None
+
+    if (
+        db_deck.user_id != current_user_id
+        and db_deck.privacy == models.PrivacyLevel.PRIVATE
+    ):
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+
+    return db_deck
 
 
 @router.get(

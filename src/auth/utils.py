@@ -98,3 +98,17 @@ async def current_active_user(current_user: User = Depends(get_current_user)) ->
     if not current_user.is_active:
         raise HTTPException(status_code=400, detail="Inactive user")
     return current_user
+
+
+async def get_optional_current_user(
+    request: Request,
+    token: Optional[str] = Depends(oauth2_scheme),
+    db: AsyncSession = Depends(get_db),
+) -> Optional[User]:
+    try:
+        user = await get_current_user(request, token, db)
+        if user and user.is_active:
+            return user
+        return None
+    except HTTPException:
+        return None
