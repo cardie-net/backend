@@ -135,9 +135,10 @@ async def test_get_folder_items(
     assert get_resp_guest.status_code == 200
     data_guest = get_resp_guest.json()
     assert isinstance(data_guest, list)
-    assert len(data_guest) == 3  # child folder, deck, unlisted deck
+    assert len(data_guest) == 2  # child folder, deck
     names = [item["name"] for item in data_guest]
     assert "Private Deck" not in names
+    assert "Unlisted Deck" not in names
 
 
 @pytest.mark.asyncio

@@ -27,19 +27,13 @@ async def get_folder_items_recursive(
         visited.add(current_folder.id)
 
         for d in current_folder.decks:
-            if owner_access or d.privacy in (
-                models.PrivacyLevel.PUBLIC,
-                models.PrivacyLevel.UNLISTED,
-            ):
+            if owner_access or d.privacy == models.PrivacyLevel.PUBLIC:
                 items.append(d)
 
         for f in current_folder.child_folders:
             if f.id in visited:
                 continue
-            if owner_access or f.privacy in (
-                models.PrivacyLevel.PUBLIC,
-                models.PrivacyLevel.UNLISTED,
-            ):
+            if owner_access or f.privacy == models.PrivacyLevel.PUBLIC:
                 items.append(f)
 
                 full_f = await get_folder(db, folder_id=f.id)
@@ -66,16 +60,10 @@ async def get_user_items(
 
     items: list[models.Folder | models.Deck] = []
     for f in folders:
-        if is_owner or f.privacy in (
-            models.PrivacyLevel.PUBLIC,
-            models.PrivacyLevel.UNLISTED,
-        ):
+        if is_owner or f.privacy == models.PrivacyLevel.PUBLIC:
             items.append(f)
     for d in decks:
-        if is_owner or d.privacy in (
-            models.PrivacyLevel.PUBLIC,
-            models.PrivacyLevel.UNLISTED,
-        ):
+        if is_owner or d.privacy == models.PrivacyLevel.PUBLIC:
             items.append(d)
 
     return items
