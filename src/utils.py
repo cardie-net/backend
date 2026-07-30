@@ -12,7 +12,7 @@ async def generate_unique_slug(
 ) -> str:
     """
     Generate a unique slug for a given model (e.g. Deck, Folder) and user, based on the provided name.
-    Ensures length is between 8 and max_length, only url-safe characters, and uniqueness for the user.
+    Ensures length is between 1 and max_length, only url-safe characters, and uniqueness for the user.
     """
     # 1. Base generation
     # Strip non-url-safe characters, keep only alphanum, dash, underscore
@@ -22,13 +22,9 @@ async def generate_unique_slug(
     if not base_slug:
         base_slug = model.__name__.lower()
 
-    # Cut off if too long (leave room for padding and uniqueness counter)
-    truncate_len = max(8, max_length - 10)
+    # Cut off if too long (leave room for uniqueness counter)
+    truncate_len = max(1, max_length - 10)
     base_slug = base_slug[:truncate_len]
-
-    # Pad if too short
-    if len(base_slug) < 8:
-        base_slug = base_slug.ljust(8, "0")
 
     # Check uniqueness
     statement = select(model.slug).where(

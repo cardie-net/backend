@@ -29,7 +29,7 @@ async def test_create_deck_without_slug(async_client: AsyncClient, guest_token: 
     data = response.json()
     assert data["name"] == "Test Deck Without Slug"
     assert "slug" in data
-    assert len(data["slug"]) >= 8
+    assert len(data["slug"]) >= 1
     import re
 
     assert re.match(r"^[a-zA-Z0-9_-]+$", data["slug"])
@@ -60,10 +60,10 @@ async def test_create_deck_without_slug_unique(
 @pytest.mark.parametrize(
     "name, expected_min_len, expected_max_len",
     [
-        ("A" * 80, 8, 80),  # Too long, should be cut off
-        ("A", 8, 80),  # Too short, should be padded
-        ("Hello World! @#$ 😜", 8, 80),  # Unsafe chars, should be removed
-        ("!@#$%^", 8, 80),  # Only unsafe chars, should fallback and pad
+        ("A" * 80, 1, 80),  # Too long, should be cut off
+        ("A", 1, 80),  # Too short, no padding
+        ("Hello World! @#$ 😜", 1, 80),  # Unsafe chars, should be removed
+        ("!@#$%^", 1, 80),  # Only unsafe chars, should fallback
     ],
 )
 @pytest.mark.asyncio

@@ -39,16 +39,16 @@ async def test_generate_unique_slug_exceeds_max_length():
     db = AsyncMock()
 
     # We want to simulate a scenario where adding a counter pushes the slug over max_length.
-    # We'll set max_length=12.
-    # base_slug will be truncated to max(8, 12-10) = 8 characters.
-    # Suppose name is "abcdefghij". base_slug will be "abcdefgh".
-    # Existing slugs will contain "abcdefgh", "abcdefgh-1", "abcdefgh-2", ..., "abcdefgh-999"
-    # "abcdefgh-99" is 11 chars. "abcdefgh-999" is 12 chars.
-    # "abcdefgh-1000" is 13 chars (exceeds max_length 12).
+    # We'll set max_length=5.
+    # base_slug will be truncated to max(1, 5-10) = 1 characters.
+    # Suppose name is "abcdefghij". base_slug will be "a".
+    # Existing slugs will contain "a", "a-1", "a-2", ..., "a-999"
+    # "a-99" is 4 chars. "a-999" is 5 chars.
+    # "a-1000" is 6 chars (exceeds max_length 5).
 
-    existing = {"abcdefgh"}
+    existing = {"a"}
     for i in range(1, 1001):
-        existing.add(f"abcdefgh-{i}")
+        existing.add(f"a-{i}")
 
     # Mock the execute result
     mock_result = MagicMock()
@@ -58,6 +58,6 @@ async def test_generate_unique_slug_exceeds_max_length():
     user_id = uuid.uuid4()
 
     with pytest.raises(
-        ValueError, match="Cannot generate a unique slug within the 12 character limit."
+        ValueError, match="Cannot generate a unique slug within the 5 character limit."
     ):
-        await generate_unique_slug(db, Deck, str(user_id), "abcdefghij", max_length=12)
+        await generate_unique_slug(db, Deck, str(user_id), "abcdefghij", max_length=5)
