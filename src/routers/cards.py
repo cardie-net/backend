@@ -1,5 +1,4 @@
 import uuid
-from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,12 +10,13 @@ from ..database import get_db
 router = APIRouter(prefix="/decks/{deck_id}/cards", tags=["cards"])
 
 
-@router.get("", response_model=List[models.CardRead])
+@router.get("", response_model=list[models.CardRead])
 async def read_cards(
     deck_id: uuid.UUID,
     user: models.User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
-):
+) -> list[models.CardRead]:
+    """Retrieve all cards for a specific deck."""
     deck = await crud.get_deck(db, deck_id=deck_id)
     if not deck:
         raise HTTPException(status_code=404, detail="Deck not found")
@@ -31,11 +31,11 @@ async def create_card(
     card: models.CardCreate,
     user: models.User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
-):
+) -> models.CardRead:
+    """Create a new card within a specific deck."""
     deck = await crud.get_deck(db, deck_id=deck_id)
     if not deck:
         raise HTTPException(status_code=404, detail="Deck not found")
-    print(f"DEBUG: deck.user_id={deck.user_id}, user.id={user.id}")
     if deck.user_id != user.id:
         raise HTTPException(status_code=403, detail="Not enough permissions")
     return await crud.create_card_for_deck(db=db, card=card, deck_id=deck_id)
@@ -47,11 +47,11 @@ async def delete_card(
     card_id: uuid.UUID,
     user: models.User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
-):
+) -> None:
+    """Delete a specific card from a deck."""
     deck = await crud.get_deck(db, deck_id=deck_id)
     if not deck:
         raise HTTPException(status_code=404, detail="Deck not found")
-    print(f"DEBUG: deck.user_id={deck.user_id}, user.id={user.id}")
     if deck.user_id != user.id:
         raise HTTPException(status_code=403, detail="Not enough permissions")
 
@@ -69,11 +69,11 @@ async def update_card(
     card_update: models.CardUpdate,
     user: models.User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
-):
+) -> models.CardRead:
+    """Update properties of a specific card."""
     deck = await crud.get_deck(db, deck_id=deck_id)
     if not deck:
         raise HTTPException(status_code=404, detail="Deck not found")
-    print(f"DEBUG: deck.user_id={deck.user_id}, user.id={user.id}")
     if deck.user_id != user.id:
         raise HTTPException(status_code=403, detail="Not enough permissions")
 
@@ -90,11 +90,11 @@ async def reorder_cards(
     reorder: models.CardReorder,
     user: models.User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
-):
+) -> dict[str, str]:
+    """Reorder the cards within a specific deck."""
     deck = await crud.get_deck(db, deck_id=deck_id)
     if not deck:
         raise HTTPException(status_code=404, detail="Deck not found")
-    print(f"DEBUG: deck.user_id={deck.user_id}, user.id={user.id}")
     if deck.user_id != user.id:
         raise HTTPException(status_code=403, detail="Not enough permissions")
 

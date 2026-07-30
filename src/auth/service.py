@@ -1,8 +1,8 @@
+import logging
 import random
 import re
 import string
 import uuid
-from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
@@ -12,8 +12,11 @@ from ..models import OAuthAccount, User, UserCreate
 from ..services.email import send_email
 from .utils import get_password_hash
 
+logger = logging.getLogger(__name__)
+
 
 async def generate_unique_username(db: AsyncSession, email: str) -> str:
+    """Generate a unique username based on the user's email."""
     base_username = email.split("@")[0]
     base_username = re.sub(r"[^a-zA-Z0-9_-]", "", base_username)
     if not base_username:
@@ -59,6 +62,7 @@ async def generate_unique_username(db: AsyncSession, email: str) -> str:
 
 
 async def request_verification(db: AsyncSession, user: User) -> None:
+    """Generate and send an email verification token for the user."""
     if not user.is_active or user.is_verified:
         return
 
@@ -75,7 +79,7 @@ async def request_verification(db: AsyncSession, user: User) -> None:
     await db.commit()
     await db.refresh(user)
 
-    print(f"Verification requested for user {user.id}.")
+    logger.info("Verification requested for user %s", user.id)
     verify_url = f"{settings.FRONTEND_URL}/verify?token={token}"
     subject = "Verify your Cardie email address"
     content = f"Please verify your email address by clicking the following link:\n\n{verify_url}\n\nOr use this code: {token}"
@@ -83,6 +87,7 @@ async def request_verification(db: AsyncSession, user: User) -> None:
 
 
 async def create_user(db: AsyncSession, user_create: UserCreate) -> User:
+    """Create a new user and trigger email verification if necessary."""
     username = user_create.username
     if not username:
         username = await generate_unique_username(db, user_create.email)
@@ -116,9 +121,10 @@ async def handle_oauth_callback(
     access_token: str,
     account_id: str,
     account_email: str,
-    expires_at: Optional[int] = None,
-    refresh_token: Optional[str] = None,
+    expires_at: int | None = None,
+    refresh_token: str | None = None,
 ) -> User:
+    """Process OAuth callback, linking or creating the user account."""
     # First, try to find user by oauth account
     stmt = select(OAuthAccount).where(
         OAuthAccount.oauth_name == oauth_name, OAuthAccount.account_id == account_id
@@ -181,6 +187,7 @@ async def handle_oauth_callback(
 
 
 async def generate_reset_token(db: AsyncSession, user: User) -> str:
+    """Generate a unique password reset token for the user."""
     while True:
         token = "".join(random.choices(string.ascii_letters + string.digits, k=10))
         statement = select(User).where(User.reset_password_token == token)
@@ -196,14 +203,17 @@ async def generate_reset_token(db: AsyncSession, user: User) -> str:
 
 
 async def send_forgot_password_email(user: User, token: str) -> None:
-    print(f"User {user.id} forgot their password.")
+    logger.info("Password reset requested for user %s", user.id)
     reset_url = f"{settings.FRONTEND_URL}/reset-password?token={token}"
     subject = "Reset your Cardie password"
     content = f"You requested a password reset. Click the following link to reset your password:\n\n{reset_url}\n\nOr use this code: {token}"
     await send_email(user.email, subject, content)
 
 
-async def reset_password(db: AsyncSession, token: str, new_password: str) -> User:
+async def reset_password(
+    db: AsyncSession, token: str, new_password: str
+) -> User | None:
+    """Reset the user's password using the provided token."""
     statement = select(User).where(User.reset_password_token == token)
     result = await db.execute(statement)
     user = result.unique().scalar_one_or_none()

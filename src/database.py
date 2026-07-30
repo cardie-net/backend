@@ -1,3 +1,5 @@
+from typing import AsyncGenerator
+
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel
 
@@ -12,11 +14,13 @@ async_session_maker = async_sessionmaker(
 )
 
 
-async def create_db_and_tables():
+async def create_db_and_tables() -> None:
+    """Create all configured database tables."""
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
 
 
-async def get_db():
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    """Yield a database session for a request."""
     async with async_session_maker() as session:
         yield session

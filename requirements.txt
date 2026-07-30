@@ -2,14 +2,10 @@ fastapi
 uvicorn[standard]
 sqlmodel
 aiosqlite
-passlib[bcrypt]
+bcrypt
 PyJWT
 httpx-oauth
 pydantic-settings
-pytest
-pytest-asyncio
-httpx
-pytest-cov
 asyncpg
 boto3
 Pillow

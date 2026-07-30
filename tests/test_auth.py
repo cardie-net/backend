@@ -1,7 +1,7 @@
-from unittest.mock import patch
-
 import pytest
 from httpx import AsyncClient
+
+from tests.conftest import extract_email_token
 
 
 @pytest.mark.asyncio
@@ -61,11 +61,7 @@ async def test_login_verified_user(async_client: AsyncClient, mock_send_email):
         },
     )
 
-    content = mock_send_email.call_args[0][2]
-    import re
-
-    match = re.search(r"code: (\w+)", content)
-    captured_token = match.group(1)
+    captured_token = extract_email_token(mock_send_email)
 
     # Verify
     await async_client.post("/api/v1/auth/verify", json={"token": captured_token})
@@ -96,11 +92,7 @@ async def test_user_verification_flow(async_client: AsyncClient, mock_send_email
     )
     assert reg_response.status_code == 201
 
-    content = mock_send_email.call_args[0][2]
-    import re
-
-    match = re.search(r"code: (\w+)", content)
-    captured_token = match.group(1)
+    captured_token = extract_email_token(mock_send_email)
 
     # Missing token
     resp = await async_client.post("/api/v1/auth/verify", json={})
@@ -140,11 +132,7 @@ async def test_forgot_password_flow(async_client: AsyncClient, mock_send_email):
             "is_guest": False,
         },
     )
-    content = mock_send_email.call_args[0][2]
-    import re
-
-    match = re.search(r"code: (\w+)", content)
-    captured_token = match.group(1)
+    captured_token = extract_email_token(mock_send_email)
 
     await async_client.post("/api/v1/auth/verify", json={"token": captured_token})
 
@@ -153,9 +141,7 @@ async def test_forgot_password_flow(async_client: AsyncClient, mock_send_email):
     )
     assert forgot_response.status_code == 202
 
-    content = mock_send_email.call_args[0][2]
-    match = re.search(r"code: (\w+)", content)
-    captured_token = match.group(1)
+    captured_token = extract_email_token(mock_send_email)
 
     reset_response = await async_client.post(
         "/api/v1/auth/reset-password",
@@ -164,10 +150,16 @@ async def test_forgot_password_flow(async_client: AsyncClient, mock_send_email):
     assert reset_response.status_code == 200
 
     # Test login with new password
-    # NOTE: verify user if login requires it, but in our case, user is unverified so login would fail.
-    # Actually wait! The user above is NOT verified, so login with new password will return 400!
-    # Let's verify them manually via DB or test verify flow too.
-    # Actually, we just need to ensure the password reset succeeded (status 200).
+    login_response = await async_client.post(
+        "/api/v1/auth/jwt/login",
+        data={
+            "username": "forgot@example.com",
+            "password": "newpassword123",
+        },
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert login_response.status_code == 204
+    assert "cardie_session" in login_response.cookies
 
 
 @pytest.mark.asyncio
@@ -192,9 +184,5 @@ async def test_resend_verification(async_client: AsyncClient, mock_send_email):
 
     # Check if a new email was sent
     assert mock_send_email.called
-    content = mock_send_email.call_args[0][2]
-    import re
-
-    match = re.search(r"code: (\w+)", content)
-    captured_token = match.group(1)
+    captured_token = extract_email_token(mock_send_email)
     assert captured_token is not None

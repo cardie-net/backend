@@ -2,18 +2,6 @@ import pytest
 from httpx import AsyncClient
 
 
-@pytest.fixture
-async def guest_token1(async_client: AsyncClient) -> str:
-    response = await async_client.post("/api/v1/auth/guest")
-    return response.cookies.get("cardie_session")
-
-
-@pytest.fixture
-async def guest_token2(async_client: AsyncClient) -> str:
-    response = await async_client.post("/api/v1/auth/guest")
-    return response.cookies.get("cardie_session")
-
-
 @pytest.mark.asyncio
 async def test_create_folder(async_client: AsyncClient, guest_token1: str):
     response = await async_client.post(
@@ -64,8 +52,6 @@ async def test_create_folder_without_slug_unique(
         headers={"X-Test-Cookie": guest_token1},
     )
 
-    assert response1.status_code == 200
-    assert response2.status_code == 200
     assert response1.status_code == 200
     assert response2.status_code == 200
     assert response1.json()["slug"] != response2.json()["slug"]
@@ -206,7 +192,7 @@ async def test_create_folder_non_existent_parent(
         },
         headers={"X-Test-Cookie": guest_token1},
     )
-    assert response.status_code in (422, 404)
+    assert response.status_code == 404
 
 
 @pytest.mark.asyncio
@@ -236,7 +222,7 @@ async def test_create_folder_not_owned_parent(
         },
         headers={"X-Test-Cookie": guest_token1},
     )
-    assert response.status_code in (403, 404, 422)
+    assert response.status_code == 403
 
 
 @pytest.mark.asyncio
@@ -254,7 +240,7 @@ async def test_delete_folder_success(async_client: AsyncClient, guest_token1: st
         f"/api/v1/folders/{folder_id}",
         headers={"X-Test-Cookie": guest_token1},
     )
-    assert delete_resp.status_code == 200
+    assert delete_resp.status_code == 204
 
 
 @pytest.mark.asyncio
@@ -274,7 +260,7 @@ async def test_delete_folder_not_owned(
         f"/api/v1/folders/{folder_id}",
         headers={"X-Test-Cookie": guest_token2},
     )
-    assert delete_resp.status_code in (403, 404)
+    assert delete_resp.status_code == 403
 
 
 @pytest.mark.asyncio
@@ -355,7 +341,7 @@ async def test_patch_folder_not_owned(
         json={"name": "Hacked Name"},
         headers={"X-Test-Cookie": guest_token2},
     )
-    assert patch_resp.status_code in (403, 404)
+    assert patch_resp.status_code == 403
 
 
 @pytest.mark.asyncio
@@ -415,7 +401,7 @@ async def test_delete_folder_cascades_decks_and_cards(
         f"/api/v1/folders/{folder_id}",
         headers={"X-Test-Cookie": guest_token1},
     )
-    assert delete_resp.status_code == 200
+    assert delete_resp.status_code == 204
 
     # Verify deck is deleted
     deck = await async_session.get(models.Deck, uuid.UUID(deck_id))

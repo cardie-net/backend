@@ -1,5 +1,4 @@
 import uuid
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
@@ -61,7 +60,8 @@ def create_auth_router() -> APIRouter:
         response: Response,
         credentials: OAuth2PasswordRequestForm = Depends(),
         db: AsyncSession = Depends(get_db),
-    ):
+    ) -> None:
+        """Authenticate a user and set a session cookie."""
         stmt = select(User).where(User.email == credentials.username)
         user = (await db.execute(stmt)).unique().scalar_one_or_none()
 
@@ -86,13 +86,17 @@ def create_auth_router() -> APIRouter:
         return
 
     @router.post("/jwt/logout", tags=["auth"])
-    async def logout(response: Response):
+    async def logout(response: Response) -> None:
+        """Log out the current user by deleting their session cookie."""
         response.status_code = status.HTTP_204_NO_CONTENT
         response.delete_cookie(COOKIE_NAME)
         return
 
     @router.post("/register", response_model=UserRead, status_code=201, tags=["auth"])
-    async def register(user_create: UserCreate, db: AsyncSession = Depends(get_db)):
+    async def register(
+        user_create: UserCreate, db: AsyncSession = Depends(get_db)
+    ) -> UserRead:
+        """Register a new user account."""
         stmt = select(User).where(User.email == user_create.email)
         existing = (await db.execute(stmt)).unique().scalar_one_or_none()
         if existing:
@@ -103,7 +107,8 @@ def create_auth_router() -> APIRouter:
     @router.post("/forgot-password", status_code=202, tags=["auth"])
     async def forgot_password(
         req: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)
-    ):
+    ) -> dict[str, str]:
+        """Send a password reset email if the account exists."""
         stmt = select(User).where(User.email == req.email)
         user = (await db.execute(stmt)).unique().scalar_one_or_none()
         if user and user.is_active:
@@ -114,7 +119,8 @@ def create_auth_router() -> APIRouter:
     @router.post("/reset-password", tags=["auth"])
     async def reset_password_endpoint(
         req: ResetPasswordRequest, db: AsyncSession = Depends(get_db)
-    ):
+    ) -> dict[str, str]:
+        """Reset a user's password using a valid token."""
         user = await reset_password(db, req.token, req.password)
         if not user:
             raise HTTPException(status_code=400, detail="RESET_PASSWORD_BAD_TOKEN")
@@ -123,7 +129,8 @@ def create_auth_router() -> APIRouter:
     @router.post("/request-verify-token", status_code=202, tags=["auth"])
     async def request_verify_token(
         req: RequestVerifyEmailRequest, db: AsyncSession = Depends(get_db)
-    ):
+    ) -> dict[str, str]:
+        """Send an email verification link to a user."""
         stmt = select(User).where(User.email == req.email)
         user = (await db.execute(stmt)).unique().scalar_one_or_none()
         if user and not user.is_verified and user.is_active:
@@ -133,7 +140,10 @@ def create_auth_router() -> APIRouter:
         }
 
     @router.post("/verify", response_model=UserRead, tags=["auth"])
-    async def verify(req: VerifyEmailRequest, db: AsyncSession = Depends(get_db)):
+    async def verify(
+        req: VerifyEmailRequest, db: AsyncSession = Depends(get_db)
+    ) -> User:
+        """Verify a user's email address using a valid token."""
         stmt = select(User).where(User.email_verification_token == req.token)
         user = (await db.execute(stmt)).unique().scalar_one_or_none()
         if not user:
@@ -149,7 +159,10 @@ def create_auth_router() -> APIRouter:
         return user
 
     @router.post("/guest", tags=["auth"])
-    async def create_guest_user(response: Response, db: AsyncSession = Depends(get_db)):
+    async def create_guest_user(
+        response: Response, db: AsyncSession = Depends(get_db)
+    ) -> None:
+        """Create a temporary guest user account and set a session cookie."""
         guest_id = uuid.uuid4().hex[:20]
         guest_email = f"guest_{guest_id}@guest.example.com"
         guest_password = uuid.uuid4().hex

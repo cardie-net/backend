@@ -9,7 +9,8 @@ from ..utils import generate_unique_slug
 
 async def get_decks_for_user(
     db: AsyncSession, user_id: uuid.UUID, skip: int = 0, limit: int = 100
-):
+) -> list[models.Deck]:
+    """Retrieve decks owned by a specific user."""
     statement = (
         select(models.Deck)
         .where(models.Deck.user_id == user_id)
@@ -22,7 +23,8 @@ async def get_decks_for_user(
 
 async def create_deck_for_user(
     db: AsyncSession, deck: models.DeckCreate, user_id: uuid.UUID
-):
+) -> models.Deck:
+    """Create a new deck for the specified user."""
     deck_data = deck.model_dump()
     if not deck_data.get("slug"):
         deck_data["slug"] = await generate_unique_slug(
@@ -35,11 +37,15 @@ async def create_deck_for_user(
     return db_deck
 
 
-async def get_deck(db: AsyncSession, deck_id: uuid.UUID):
+async def get_deck(db: AsyncSession, deck_id: uuid.UUID) -> models.Deck | None:
+    """Retrieve a specific deck by ID."""
     return await db.get(models.Deck, deck_id)
 
 
-async def get_deck_by_username_and_slug(db: AsyncSession, username: str, slug: str):
+async def get_deck_by_username_and_slug(
+    db: AsyncSession, username: str, slug: str
+) -> models.Deck | None:
+    """Retrieve a deck by its owner's username and the deck's slug."""
     statement = (
         select(models.Deck)
         .join(models.User, models.Deck.user_id == models.User.id)
@@ -49,14 +55,16 @@ async def get_deck_by_username_and_slug(db: AsyncSession, username: str, slug: s
     return result.scalars().first()
 
 
-async def delete_deck(db: AsyncSession, db_deck: models.Deck):
+async def delete_deck(db: AsyncSession, db_deck: models.Deck) -> None:
+    """Delete a specific deck."""
     await db.delete(db_deck)
     await db.commit()
 
 
 async def update_deck(
     db: AsyncSession, db_deck: models.Deck, deck_update: models.DeckUpdate
-):
+) -> models.Deck:
+    """Update properties of a specific deck."""
     update_data = deck_update.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(db_deck, key, value)

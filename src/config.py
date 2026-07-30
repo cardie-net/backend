@@ -1,12 +1,16 @@
-from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    SECRET_KEY: str = "DEFAULT-SECRET-KEY-FOR-TESTING"
+    SECRET_KEY: str
     GOOGLE_OAUTH_CLIENT_ID: str = ""
     GOOGLE_OAUTH_CLIENT_SECRET: str = ""
     DATABASE_URL: str = "sqlite+aiosqlite:///./sql_app.db"
+    JWT_ALGORITHM: str = "HS256"
+
+    # Image Settings
+    IMAGE_MAX_SIZE: int = 512
+    IMAGE_QUALITY: int = 80
 
     # Email Settings
     SMTP_SERVER: str = ""
@@ -14,6 +18,8 @@ class Settings(BaseSettings):
     SMTP_USERNAME: str = ""
     SMTP_PASSWORD: str = ""
     EMAILS_FROM_EMAIL: str = "noreply@example.com"
+    EMAIL_DOMAIN: str = "cardie.net"
+    SMTP_TIMEOUT: int = 5
     FRONTEND_URL: str = "http://localhost:3000"
 
     # AWS S3 Settings
@@ -23,6 +29,7 @@ class Settings(BaseSettings):
     S3_BUCKET_NAME: str = ""
     AWS_ENDPOINT_URL: str = ""
     S3_PUBLIC_URL: str = ""
+    S3_AVATAR_PREFIX: str = "avatars/"
 
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"

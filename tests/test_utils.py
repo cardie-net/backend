@@ -8,6 +8,32 @@ from src.utils import generate_unique_slug
 
 
 @pytest.mark.asyncio
+async def test_generate_unique_slug_happy_path():
+    db = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = []
+    db.execute.return_value = mock_result
+
+    user_id = uuid.uuid4()
+    slug = await generate_unique_slug(db, Deck, str(user_id), "My Test Deck")
+
+    assert slug == "mytestdeck"
+
+
+@pytest.mark.asyncio
+async def test_generate_unique_slug_with_collision():
+    db = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = ["mytestdeck", "mytestdeck-1"]
+    db.execute.return_value = mock_result
+
+    user_id = uuid.uuid4()
+    slug = await generate_unique_slug(db, Deck, str(user_id), "My Test Deck")
+
+    assert slug == "mytestdeck-2"
+
+
+@pytest.mark.asyncio
 async def test_generate_unique_slug_exceeds_max_length():
     # Mock db session
     db = AsyncMock()

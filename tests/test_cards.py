@@ -3,18 +3,6 @@ from httpx import AsyncClient
 
 
 @pytest.fixture
-async def guest_token1(async_client: AsyncClient) -> str:
-    response = await async_client.post("/api/v1/auth/guest")
-    return response.cookies.get("cardie_session")
-
-
-@pytest.fixture
-async def guest_token2(async_client: AsyncClient) -> str:
-    response = await async_client.post("/api/v1/auth/guest")
-    return response.cookies.get("cardie_session")
-
-
-@pytest.fixture
 async def private_deck_id(async_client: AsyncClient, guest_token1: str) -> int:
     response = await async_client.post(
         "/api/v1/decks/",
@@ -64,7 +52,6 @@ async def test_create_card_non_owner_forbidden(
         },
         headers={"X-Test-Cookie": guest_token2},
     )
-    print("REQ HEADERS:", response.request.headers)
     assert response.status_code == 403
 
 
@@ -113,7 +100,6 @@ async def test_read_cards_non_owner_forbidden_private_deck(
         f"/api/v1/decks/{private_deck_id}/cards/",
         headers={"X-Test-Cookie": guest_token2},
     )
-    print("REQ HEADERS:", response.request.headers)
     assert response.status_code == 403
 
 

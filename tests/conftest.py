@@ -1,3 +1,7 @@
+import re
+from unittest.mock import patch
+
+import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -51,13 +55,33 @@ async def async_client(async_session: AsyncSession) -> AsyncClient:
     ) as client:
         yield client
 
-
-from unittest.mock import patch
-
-import pytest
+    app.dependency_overrides.clear()
 
 
 @pytest.fixture(autouse=True)
 def mock_send_email():
     with patch("src.auth.service.send_email") as mock:
         yield mock
+
+
+@pytest.fixture
+async def guest_token1(async_client: AsyncClient) -> str:
+    response = await async_client.post("/api/v1/auth/guest")
+    return response.cookies.get("cardie_session")
+
+
+@pytest.fixture
+async def guest_token(guest_token1: str) -> str:
+    return guest_token1
+
+
+@pytest.fixture
+async def guest_token2(async_client: AsyncClient) -> str:
+    response = await async_client.post("/api/v1/auth/guest")
+    return response.cookies.get("cardie_session")
+
+
+def extract_email_token(mock_send_email_call) -> str:
+    content = mock_send_email_call.call_args[0][2]
+    match = re.search(r"code: (\w+)", content)
+    return match.group(1) if match else None

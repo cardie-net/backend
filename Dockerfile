@@ -5,9 +5,12 @@ WORKDIR /app
 # Install dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+RUN adduser --disabled-password --gecos '' --uid 1000 appuser
 
 # Copy application code
 COPY src/ ./src/
+
+USER appuser
 
 # Expose port
 EXPOSE 8000

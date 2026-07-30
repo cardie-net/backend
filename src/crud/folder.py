@@ -10,7 +10,8 @@ from ..utils import generate_unique_slug
 
 async def get_folders_for_user(
     db: AsyncSession, user_id: uuid.UUID, skip: int = 0, limit: int = 100
-):
+) -> list[models.Folder]:
+    """Retrieve folders owned by a specific user."""
     statement = (
         select(models.Folder)
         .where(models.Folder.user_id == user_id)
@@ -23,7 +24,8 @@ async def get_folders_for_user(
 
 async def create_folder_for_user(
     db: AsyncSession, folder: models.FolderCreate, user_id: uuid.UUID
-):
+) -> models.Folder:
+    """Create a new folder for the specified user."""
     folder_data = folder.model_dump()
     if not folder_data.get("slug"):
         folder_data["slug"] = await generate_unique_slug(
@@ -36,7 +38,8 @@ async def create_folder_for_user(
     return db_folder
 
 
-async def get_folder(db: AsyncSession, folder_id: uuid.UUID):
+async def get_folder(db: AsyncSession, folder_id: uuid.UUID) -> models.Folder | None:
+    """Retrieve a specific folder by ID."""
     # Using select with selectinload for child_folders and decks
     statement = (
         select(models.Folder)
@@ -52,7 +55,8 @@ async def get_folder(db: AsyncSession, folder_id: uuid.UUID):
 
 async def update_folder(
     db: AsyncSession, folder_id: uuid.UUID, folder_update: models.FolderUpdate
-):
+) -> models.Folder | None:
+    """Update properties of a specific folder."""
     db_folder = await get_folder(db, folder_id=folder_id)
     if not db_folder:
         return None
@@ -67,7 +71,8 @@ async def update_folder(
     return db_folder
 
 
-async def delete_folder(db: AsyncSession, folder_id: uuid.UUID):
+async def delete_folder(db: AsyncSession, folder_id: uuid.UUID) -> bool:
+    """Delete a specific folder by ID."""
     db_folder = await get_folder(db, folder_id=folder_id)
     if not db_folder:
         return False

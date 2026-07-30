@@ -7,11 +7,12 @@ the JWT token as a URL parameter.
 """
 
 import datetime
+import logging
 import secrets
 from urllib.parse import urlencode
 
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import RedirectResponse
 from httpx_oauth.integrations.fastapi import OAuth2AuthorizeCallback
 from httpx_oauth.oauth2 import OAuth2Token
@@ -28,6 +29,7 @@ CSRF_TOKEN_KEY = "csrftoken"
 CSRF_TOKEN_COOKIE_NAME = "fastapiusersoauthcsrf"
 
 CALLBACK_ROUTE_NAME = "oauth:google.jwt.callback"
+logger = logging.getLogger(__name__)
 
 
 def _generate_state_token(data: dict[str, str], lifetime_seconds: int = 3600) -> str:
@@ -35,7 +37,7 @@ def _generate_state_token(data: dict[str, str], lifetime_seconds: int = 3600) ->
     data["exp"] = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(
         seconds=lifetime_seconds
     )
-    return jwt.encode(data, settings.SECRET_KEY, algorithm="HS256")
+    return jwt.encode(data, settings.SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
 
 def _generate_csrf_token() -> str:
@@ -95,7 +97,7 @@ def create_google_oauth_router() -> APIRouter:
             oauth2_authorize_callback
         ),
         db: AsyncSession = Depends(get_db),
-    ):
+    ) -> RedirectResponse:
         """Handle Google's OAuth callback and redirect to the frontend with a JWT."""
         token, state = access_token_state
 
@@ -105,7 +107,7 @@ def create_google_oauth_router() -> APIRouter:
                 state,
                 settings.SECRET_KEY,
                 audience=STATE_TOKEN_AUDIENCE,
-                algorithms=["HS256"],
+                algorithms=[settings.JWT_ALGORITHM],
             )
         except jwt.DecodeError:
             return RedirectResponse(
@@ -141,8 +143,9 @@ def create_google_oauth_router() -> APIRouter:
                 if hasattr(e, "response") and e.response
                 else str(e)
             )
-            print(
-                f"Google OAuth get_id_email failed. Please ensure the 'Google People API' is enabled in your Google Cloud Console. Details: {error_text}"
+            logger.error(
+                "Google OAuth get_id_email failed. Please ensure the 'Google People API' is enabled in your Google Cloud Console. Details: %s",
+                error_text,
             )
             return RedirectResponse(
                 url=_build_frontend_url("/login", {"error": "oauth_profile_error"})
@@ -165,7 +168,7 @@ def create_google_oauth_router() -> APIRouter:
                 refresh_token=token.get("refresh_token"),
             )
         except Exception as e:
-            print(f"OAuth callback failed: {e}")
+            logger.error("OAuth callback failed: %s", e)
             return RedirectResponse(
                 url=_build_frontend_url("/login", {"error": "oauth_user_exists"})
             )

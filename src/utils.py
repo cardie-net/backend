@@ -1,5 +1,5 @@
 import re
-from typing import Type, TypeVar
+from typing import TypeVar
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import SQLModel, select
@@ -8,7 +8,7 @@ T = TypeVar("T", bound=SQLModel)
 
 
 async def generate_unique_slug(
-    db: AsyncSession, model: Type[T], user_id: str, name: str, max_length: int = 80
+    db: AsyncSession, model: type[T], user_id: str, name: str, max_length: int = 80
 ) -> str:
     """
     Generate a unique slug for a given model (e.g. Deck, Folder) and user, based on the provided name.

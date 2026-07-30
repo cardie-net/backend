@@ -1,11 +1,11 @@
 import asyncio
 import uuid
-from typing import Dict, List, Optional, Union
 
 import fastapi
 import sqlalchemy.exc
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import select
 
 from .. import crud, models
 from ..auth.router import current_active_user
@@ -39,7 +39,8 @@ def _user_to_dict(user: models.User) -> dict:
 
 
 @router.get("/me", response_model=models.UserRead)
-async def get_current_user(user: models.User = Depends(current_active_user)):
+async def get_current_user(user: models.User = Depends(current_active_user)) -> dict:
+    """Retrieve the currently authenticated user."""
     return _user_to_dict(user)
 
 
@@ -48,7 +49,8 @@ async def update_current_user(
     user_update: models.UserUpdate,
     user: models.User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
-):
+) -> dict:
+    """Update properties of the current user."""
     update_data = user_update.model_dump(exclude_unset=True)
 
     bio = update_data.pop("bio", None)
@@ -94,7 +96,8 @@ async def upload_avatar(
     file: fastapi.UploadFile = fastapi.File(...),
     user: models.User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
-):
+) -> dict:
+    """Upload and set an avatar for the current user."""
     if not file.content_type.startswith("image/"):
         raise fastapi.HTTPException(status_code=400, detail="File must be an image")
 
@@ -132,7 +135,8 @@ async def upload_avatar(
 async def remove_avatar(
     user: models.User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
-):
+) -> dict:
+    """Remove the avatar of the current user."""
     if user.avatar_url:
         old_object_name = extract_object_name_from_url(user.avatar_url)
         if old_object_name:
@@ -149,10 +153,8 @@ async def remove_avatar(
 async def get_user_profile(
     username: str,
     db: AsyncSession = Depends(get_db),
-):
-    from fastapi import HTTPException
-    from sqlalchemy.future import select
-
+) -> dict:
+    """Retrieve the public profile of a user by username."""
     result = await db.execute(
         select(models.User).where(models.User.username == username)
     )
@@ -166,9 +168,10 @@ async def get_user_profile(
 async def get_user_deck_by_slug(
     username: str,
     deck_slug: str,
-    user: Optional[models.User] = Depends(get_optional_current_user),
+    user: models.User | None = Depends(get_optional_current_user),
     db: AsyncSession = Depends(get_db),
-):
+) -> models.Deck:
+    """Retrieve a user's deck by slug."""
     db_deck = await crud.get_deck_by_username_and_slug(
         db, username=username, slug=deck_slug
     )
@@ -188,13 +191,14 @@ async def get_user_deck_by_slug(
 
 
 @router.get(
-    "/{user_id}/items", response_model=List[Union[models.FolderRead, models.DeckRead]]
+    "/{user_id}/items", response_model=list[models.FolderRead | models.DeckRead]
 )
 async def get_user_items(
     user_id: uuid.UUID,
     user: models.User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
-):
+) -> list[models.FolderRead | models.DeckRead]:
+    """Retrieve all top-level items for a given user."""
     items = await crud.get_user_items(
         db, target_user_id=user_id, requesting_user_id=user.id
     )

@@ -1,5 +1,4 @@
 import uuid
-from typing import List
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import func, select
@@ -8,12 +7,14 @@ from .. import models
 
 
 async def get_card(db: AsyncSession, card_id: uuid.UUID) -> models.Card | None:
+    """Retrieve a specific card by ID."""
     statement = select(models.Card).where(models.Card.id == card_id)
     result = await db.execute(statement)
     return result.scalar_one_or_none()
 
 
-async def get_cards_for_deck(db: AsyncSession, deck_id: uuid.UUID) -> List[models.Card]:
+async def get_cards_for_deck(db: AsyncSession, deck_id: uuid.UUID) -> list[models.Card]:
+    """Retrieve all cards within a deck, ordered sequentially."""
     statement = (
         select(models.Card)
         .where(models.Card.deck_id == deck_id)
@@ -26,6 +27,7 @@ async def get_cards_for_deck(db: AsyncSession, deck_id: uuid.UUID) -> List[model
 async def create_card_for_deck(
     db: AsyncSession, card: models.CardCreate, deck_id: uuid.UUID
 ) -> models.Card:
+    """Create a new card and append it to the end of the deck."""
     statement = select(func.max(models.Card.order)).where(
         models.Card.deck_id == deck_id
     )
@@ -45,6 +47,7 @@ async def create_card_for_deck(
 async def update_card(
     db: AsyncSession, db_card: models.Card, card_update: models.CardUpdate
 ) -> models.Card:
+    """Update properties of an existing card."""
     update_data = card_update.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(db_card, key, value)
@@ -55,14 +58,16 @@ async def update_card(
     return db_card
 
 
-async def delete_card(db: AsyncSession, db_card: models.Card):
+async def delete_card(db: AsyncSession, db_card: models.Card) -> None:
+    """Delete a specific card."""
     await db.delete(db_card)
     await db.commit()
 
 
 async def reorder_cards(
-    db: AsyncSession, deck_id: uuid.UUID, card_ids: List[uuid.UUID]
-):
+    db: AsyncSession, deck_id: uuid.UUID, card_ids: list[uuid.UUID]
+) -> None:
+    """Update the sequential order of cards in a deck."""
     statement = select(models.Card).where(models.Card.deck_id == deck_id)
     result = await db.execute(statement)
     cards = {c.id: c for c in result.scalars().all()}

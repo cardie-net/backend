@@ -1,5 +1,6 @@
+import asyncio
 import io
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from PIL import Image
@@ -27,13 +28,14 @@ def test_optimize_image():
 
 
 @patch("src.services.s3_service.get_s3_client")
-def test_upload_file_to_s3(mock_get_s3_client):
+def test_upload_file_to_s3(mock_get_s3_client, monkeypatch):
     mock_client = MagicMock()
     mock_get_s3_client.return_value = mock_client
 
     test_bytes = b"testdata"
-    settings.S3_BUCKET_NAME = "test-bucket"
-    settings.AWS_ENDPOINT_URL = "http://test-endpoint"
+    monkeypatch.setattr(settings, "S3_BUCKET_NAME", "test-bucket")
+    monkeypatch.setattr(settings, "AWS_ENDPOINT_URL", "http://test-endpoint")
+    monkeypatch.setattr(settings, "S3_PUBLIC_URL", None)
 
     result = upload_file_to_s3(test_bytes, "test_key", "image/webp")
 
@@ -44,4 +46,42 @@ def test_upload_file_to_s3(mock_get_s3_client):
         ContentType="image/webp",
     )
 
-    assert result == "https://test-bucket/test_key"
+    assert result == "http://test-endpoint/test-bucket/test_key"
+
+
+@patch("src.services.s3_service.get_s3_client")
+def test_delete_file_from_s3(mock_get_s3_client, monkeypatch):
+    from src.services.s3_service import delete_file_from_s3
+
+    mock_client = MagicMock()
+    mock_get_s3_client.return_value = mock_client
+
+    monkeypatch.setattr(settings, "S3_BUCKET_NAME", "test-bucket")
+
+    delete_file_from_s3("test_key")
+
+    mock_client.delete_object.assert_called_once_with(
+        Bucket="test-bucket",
+        Key="test_key",
+    )
+
+
+@patch("src.services.email.smtplib")
+@pytest.mark.asyncio
+async def test_send_email_success(mock_smtplib, monkeypatch):
+    from src.services.email import _background_tasks, send_email
+
+    monkeypatch.setattr(settings, "SMTP_SERVER", "smtp.test.com")
+    monkeypatch.setattr(settings, "SMTP_PORT", 587)
+    monkeypatch.setattr(settings, "SMTP_USERNAME", "test@test.com")
+    monkeypatch.setattr(settings, "SMTP_PASSWORD", "secret")
+
+    mock_server_instance = MagicMock()
+    mock_smtplib.SMTP.return_value.__enter__.return_value = mock_server_instance
+
+    await send_email("recipient@test.com", "Test Subject", "Test Body")
+
+    if _background_tasks:
+        await asyncio.gather(*_background_tasks)
+
+    mock_server_instance.send_message.assert_called_once()
