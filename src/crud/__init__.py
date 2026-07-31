@@ -22,6 +22,7 @@ from .folder import (
     update_folder,
 )
 from .items import get_folder_items_recursive, get_user_items
+from .progress import get_deck_progress, sync_deck_progress
 
 __all__ = [
     "create_card_for_deck",
@@ -43,4 +44,6 @@ __all__ = [
     "delete_deck",
     "update_deck",
     "get_deck_by_username_and_slug",
+    "get_deck_progress",
+    "sync_deck_progress",
 ]

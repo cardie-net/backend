@@ -9,6 +9,9 @@ from .common import (
 )
 from .schemas import (
     CardCreate,
+    CardProgressRead,
+    CardProgressSyncRequest,
+    CardProgressUpdate,
     CardRead,
     CardReorder,
     CardUpdate,
@@ -27,6 +30,7 @@ from .tables import (
     Card,
     CardBase,
     CardElement,
+    CardProgress,
     Deck,
     DeckBase,
     Folder,
@@ -45,6 +49,10 @@ __all__ = [
     "CardRead",
     "CardReorder",
     "CardUpdate",
+    "CardProgress",
+    "CardProgressRead",
+    "CardProgressSyncRequest",
+    "CardProgressUpdate",
     "Deck",
     "DeckBase",
     "DeckCreate",

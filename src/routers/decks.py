@@ -93,3 +93,41 @@ async def update_deck(
         raise HTTPException(
             status_code=400, detail="Deck with this slug already exists"
         ) from exc
+
+
+@router.get("/{deck_id}/progress", response_model=list[models.CardProgressRead])
+async def get_deck_progress(
+    deck_id: uuid.UUID,
+    user: models.User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[models.CardProgressRead]:
+    """Retrieve learning progress for a specific deck."""
+    db_deck = await crud.get_deck(db, deck_id=deck_id)
+    if not db_deck:
+        raise HTTPException(status_code=404, detail="Deck not found")
+
+    # Allow reading progress even if the deck is public, as progress is tied to the current user
+    if db_deck.user_id != user.id and db_deck.privacy == models.PrivacyLevel.PRIVATE:
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+
+    return await crud.get_deck_progress(db, user_id=user.id, deck_id=deck_id)
+
+
+@router.post("/{deck_id}/progress", status_code=204)
+async def sync_deck_progress(
+    deck_id: uuid.UUID,
+    sync_request: models.CardProgressSyncRequest,
+    user: models.User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Sync learning progress for a specific deck."""
+    db_deck = await crud.get_deck(db, deck_id=deck_id)
+    if not db_deck:
+        raise HTTPException(status_code=404, detail="Deck not found")
+
+    if db_deck.user_id != user.id and db_deck.privacy == models.PrivacyLevel.PRIVATE:
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+
+    await crud.sync_deck_progress(
+        db, user_id=user.id, deck_id=deck_id, progress_updates=sync_request.progress
+    )

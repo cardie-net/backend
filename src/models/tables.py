@@ -160,3 +160,18 @@ class Card(CardBase, table=True):
     deck_id: uuid.UUID | None = Field(default=None, foreign_key="decks.id")
 
     deck: Deck | None = Relationship(back_populates="cards")
+
+
+# --- Learning Progress Models ---
+
+
+class CardProgress(SQLModel, table=True):
+    __tablename__ = "card_progress"
+    __table_args__ = (
+        UniqueConstraint("user_id", "card_id", name="uq_user_card_progress"),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID = Field(foreign_key="user.id", index=True)
+    card_id: uuid.UUID = Field(foreign_key="cards.id", index=True)
+    box: int = Field(default=1)  # 1, 2, or 3

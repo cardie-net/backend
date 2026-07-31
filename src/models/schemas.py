@@ -142,3 +142,20 @@ class CardReorder(BaseModel):
 class CardRead(CardBase):
     id: uuid.UUID
     deck_id: uuid.UUID
+
+
+# --- Learning Progress Schemas ---
+
+
+class CardProgressUpdate(BaseModel):
+    card_id: uuid.UUID
+    box: int
+
+
+class CardProgressSyncRequest(BaseModel):
+    progress: list[CardProgressUpdate]
+
+
+class CardProgressRead(BaseModel):
+    card_id: uuid.UUID
+    box: int
