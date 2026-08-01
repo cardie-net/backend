@@ -1,3 +1,3 @@
-from . import cards, decks, folders, users
+from . import cards, decks, folders, srs, users
 
-__all__ = ["decks", "cards", "folders", "users"]
+__all__ = ["decks", "cards", "folders", "users", "srs"]

@@ -23,6 +23,12 @@ from .folder import (
 )
 from .items import get_folder_items_recursive, get_user_items
 from .progress import get_deck_progress, sync_deck_progress
+from .srs import (
+    compute_srs_schedule,
+    get_srs_counts_for_user,
+    get_srs_study_cards,
+    process_srs_reviews,
+)
 
 __all__ = [
     "create_card_for_deck",
@@ -46,4 +52,8 @@ __all__ = [
     "get_deck_by_username_and_slug",
     "get_deck_progress",
     "sync_deck_progress",
+    "compute_srs_schedule",
+    "get_srs_counts_for_user",
+    "get_srs_study_cards",
+    "process_srs_reviews",
 ]

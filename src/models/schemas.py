@@ -159,3 +159,33 @@ class CardProgressSyncRequest(BaseModel):
 class CardProgressRead(BaseModel):
     card_id: uuid.UUID
     box: int
+
+
+class SRSCardProgressRead(BaseModel):
+    card_id: uuid.UUID
+    repetitions: int
+    ease_factor: float
+    interval: float
+    due_date: str | None
+    last_reviewed: str | None
+
+
+class SRSReviewItem(BaseModel):
+    card_id: uuid.UUID
+    rating: int
+
+
+class SRSReviewRequest(BaseModel):
+    reviews: list[SRSReviewItem]
+
+
+class SRSDeckCounts(BaseModel):
+    new_count: int
+    learning_count: int
+    review_count: int
+
+
+class SRSStudyResponse(BaseModel):
+    new_cards: list[SRSCardProgressRead]
+    learning_cards: list[SRSCardProgressRead]
+    review_cards: list[SRSCardProgressRead]

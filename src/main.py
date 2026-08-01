@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .auth.router import create_auth_router
 from .database import create_db_and_tables
-from .routers import cards, decks, folders, users
+from .routers import cards, decks, folders, srs, users
 
 
 @asynccontextmanager
@@ -38,3 +38,4 @@ app.include_router(folders.router, prefix="/api/v1")
 app.include_router(decks.router, prefix="/api/v1")
 app.include_router(cards.router, prefix="/api/v1")
 app.include_router(users.router, prefix="/api/v1")
+app.include_router(srs.router, prefix="/api/v1")
