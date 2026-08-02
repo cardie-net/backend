@@ -580,3 +580,143 @@ async def test_create_deck_invalid_properties(
         headers={"X-Test-Cookie": guest_token},
     )
     assert response2.status_code == 422
+
+
+# --- Card image upload ---
+
+
+@pytest.fixture
+async def upload_deck_id(async_client: AsyncClient, guest_token: str) -> str:
+    """Creates a private deck owned by guest_token for upload tests."""
+    import uuid
+
+    response = await async_client.post(
+        "/api/v1/decks",
+        json={
+            "name": "Upload Deck",
+            "slug": f"upload-deck-{uuid.uuid4().hex[:8]}",
+            "privacy": "private",
+        },
+        headers={"X-Test-Cookie": guest_token},
+    )
+    return response.json()["id"]
+
+
+def _make_image_file() -> tuple[str, bytes, str]:
+    import io
+
+    from PIL import Image
+
+    img = Image.new("RGB", (100, 100), color="red")
+    img_byte_arr = io.BytesIO()
+    img.save(img_byte_arr, format="JPEG")
+    return "test.jpg", img_byte_arr.getvalue(), "image/jpeg"
+
+
+@pytest.mark.asyncio
+async def test_upload_card_image_success(
+    async_client: AsyncClient, guest_token: str, upload_deck_id: str
+):
+    from unittest.mock import patch
+
+    files = {"file": _make_image_file()}
+
+    with patch(
+        "src.routers.decks.upload_file_to_s3",
+        return_value="http://test-url/card-images/abc.webp",
+    ):
+        response = await async_client.post(
+            f"/api/v1/decks/{upload_deck_id}/images",
+            headers={"X-Test-Cookie": guest_token},
+            files=files,
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["url"] == "http://test-url/card-images/abc.webp"
+
+
+@pytest.mark.asyncio
+async def test_upload_card_image_non_image(
+    async_client: AsyncClient, guest_token: str, upload_deck_id: str
+):
+    files = {"file": ("a.txt", b"hello", "text/plain")}
+    response = await async_client.post(
+        f"/api/v1/decks/{upload_deck_id}/images",
+        headers={"X-Test-Cookie": guest_token},
+        files=files,
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "File must be an image"
+
+
+@pytest.mark.asyncio
+async def test_upload_card_image_non_owner(
+    async_client: AsyncClient, guest_token2: str, upload_deck_id: str
+):
+    files = {"file": _make_image_file()}
+    response = await async_client.post(
+        f"/api/v1/decks/{upload_deck_id}/images",
+        headers={"X-Test-Cookie": guest_token2},
+        files=files,
+    )
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_upload_card_image_deck_not_found(
+    async_client: AsyncClient, guest_token: str
+):
+    files = {"file": _make_image_file()}
+    response = await async_client.post(
+        "/api/v1/decks/00000000-0000-0000-0000-000000000999/images",
+        headers={"X-Test-Cookie": guest_token},
+        files=files,
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_deck_cleans_up_card_images(
+    async_client: AsyncClient, guest_token: str, upload_deck_id: str
+):
+    from unittest.mock import patch
+
+    me_resp = await async_client.get(
+        "/api/v1/users/me", headers={"X-Test-Cookie": guest_token}
+    )
+    user_id = me_resp.json()["id"]
+    managed_url = f"https://cdn.example.com/card-images/{user_id}/deck/c.webp"
+    card_resp = await async_client.post(
+        f"/api/v1/decks/{upload_deck_id}/cards",
+        json={
+            "front": [{"type": "image", "url": managed_url}],
+            "back": [{"type": "text", "content": "back"}],
+        },
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert card_resp.status_code == 200
+
+    with patch("src.routers.decks.delete_managed_images") as mock_del:
+        del_resp = await async_client.delete(
+            f"/api/v1/decks/{upload_deck_id}",
+            headers={"X-Test-Cookie": guest_token},
+        )
+    assert del_resp.status_code == 204
+    mock_del.assert_called_once_with([managed_url], f"card-images/{user_id}/")
+
+
+@pytest.mark.asyncio
+async def test_upload_card_image_too_large(
+    async_client: AsyncClient, guest_token: str, upload_deck_id: str
+):
+    from src.config import settings
+
+    files = {"file": ("big.jpg", b"x" * (settings.MAX_UPLOAD_SIZE + 1), "image/jpeg")}
+    response = await async_client.post(
+        f"/api/v1/decks/{upload_deck_id}/images",
+        headers={"X-Test-Cookie": guest_token},
+        files=files,
+    )
+    assert response.status_code == 413
+    assert response.json()["detail"] == "File too large"

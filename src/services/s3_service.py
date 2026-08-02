@@ -7,6 +7,10 @@ from ..config import settings
 
 logger = logging.getLogger(__name__)
 
+# Object-key namespaces inside the S3 bucket
+AVATAR_PREFIX = "avatars/"
+CARD_IMAGE_PREFIX = "card-images/"
+
 
 def get_s3_client():
     kwargs = {
@@ -52,9 +56,21 @@ def delete_file_from_s3(object_name: str) -> None:
         logger.error(f"Failed to delete S3 object {object_name}: {e}")
 
 
-def extract_object_name_from_url(url: str) -> str | None:
+def extract_object_name_from_url(url: str, prefix: str | None = None) -> str | None:
     if not url:
         return None
-    if settings.S3_AVATAR_PREFIX in url:
-        return url[url.find(settings.S3_AVATAR_PREFIX) :]
+    if prefix is None:
+        prefix = AVATAR_PREFIX
+    if prefix in url:
+        return url[url.find(prefix) :]
     return None
+
+
+def delete_managed_images(urls: list[str], prefix: str | None = None) -> None:
+    """Best-effort delete of S3 objects referenced by managed image URLs."""
+    if prefix is None:
+        prefix = CARD_IMAGE_PREFIX
+    for url in urls:
+        object_name = extract_object_name_from_url(url, prefix)
+        if object_name:
+            delete_file_from_s3(object_name)

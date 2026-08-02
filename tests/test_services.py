@@ -85,3 +85,90 @@ async def test_send_email_success(mock_smtplib, monkeypatch):
         await asyncio.gather(*_background_tasks)
 
     mock_server_instance.send_message.assert_called_once()
+
+
+@patch("src.services.s3_service.delete_file_from_s3")
+def test_delete_managed_images_filters_external(mock_delete):
+    from src.services.s3_service import delete_managed_images
+
+    delete_managed_images(
+        [
+            "https://cdn.example.com/card-images/u/d/c.webp",
+            "https://imgur.com/x.png",
+            "",
+        ]
+    )
+
+    mock_delete.assert_called_once_with("card-images/u/d/c.webp")
+
+
+def test_extract_object_name_from_url_prefix():
+    from src.services.s3_service import extract_object_name_from_url
+
+    # Card prefix: only card-image URLs extract an object name
+    card_url = "https://cdn.example.com/card-images/u/d/c.webp"
+    assert (
+        extract_object_name_from_url(card_url, "card-images/")
+        == "card-images/u/d/c.webp"
+    )
+    assert extract_object_name_from_url(card_url, "avatars/") is None
+
+    # Avatar default stays backward compatible
+    avatar_url = "https://cdn.example.com/avatars/u/a.webp"
+    assert extract_object_name_from_url(avatar_url) == "avatars/u/a.webp"
+    assert extract_object_name_from_url("https://imgur.com/x.png") is None
+    assert extract_object_name_from_url(None) is None
+    assert extract_object_name_from_url("") is None
+
+
+def test_collect_image_urls_mixed():
+    from src.services.image_service import collect_image_urls
+
+    elements = [
+        {"type": "text", "content": "hi"},
+        {"type": "image", "url": "https://cdn.example.com/card-images/a.webp"},
+    ]
+    assert collect_image_urls(elements) == [
+        "https://cdn.example.com/card-images/a.webp"
+    ]
+    assert collect_image_urls([]) == []
+    assert collect_image_urls(None) == []
+    assert collect_image_urls(elements, [{"type": "image", "url": "b.webp"}]) == [
+        "https://cdn.example.com/card-images/a.webp",
+        "b.webp",
+    ]
+
+
+@patch("src.services.s3_service.delete_file_from_s3")
+def test_delete_managed_images_user_scoped(mock_delete):
+    """Only objects under the caller's card-image namespace are deleted."""
+    from src.services.s3_service import delete_managed_images
+
+    own_prefix = "card-images/user-a/"
+
+    delete_managed_images(
+        [
+            "https://cdn.example.com/card-images/user-a/deck/c.webp",
+            "https://cdn.example.com/card-images/user-b/deck/c.webp",
+        ],
+        prefix=own_prefix,
+    )
+
+    mock_delete.assert_called_once_with("card-images/user-a/deck/c.webp")
+
+
+def test_extract_object_name_from_url_user_scoped():
+    from src.services.s3_service import extract_object_name_from_url
+
+    own = extract_object_name_from_url(
+        "https://cdn.example.com/card-images/user-a/deck/c.webp",
+        "card-images/user-a/",
+    )
+    assert own == "card-images/user-a/deck/c.webp"
+
+    # Another user's object under the same prefix family must not match
+    other = extract_object_name_from_url(
+        "https://cdn.example.com/card-images/user-b/deck/c.webp",
+        "card-images/user-a/",
+    )
+    assert other is None

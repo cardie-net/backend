@@ -439,3 +439,146 @@ async def test_reorder_cards_duplicate_id(
         headers={"X-Test-Cookie": guest_token1},
     )
     assert reorder_resp.status_code == 400
+
+
+# --- Card image S3 cleanup ---
+
+
+# --- Card image S3 cleanup ---
+
+
+def _managed_url(user_id: str) -> str:
+    return f"https://cdn.example.com/card-images/{user_id}/deck/c.webp"
+
+
+@pytest.fixture
+async def guest_user_id(async_client: AsyncClient, guest_token1: str) -> str:
+    resp = await async_client.get(
+        "/api/v1/users/me", headers={"X-Test-Cookie": guest_token1}
+    )
+    return resp.json()["id"]
+
+
+@pytest.mark.asyncio
+async def test_patch_card_removed_image_cleans_up_s3(
+    async_client: AsyncClient,
+    guest_token1: str,
+    guest_user_id: str,
+    private_deck_id: int,
+):
+    from unittest.mock import patch
+
+    url = _managed_url(guest_user_id)
+    create_resp = await async_client.post(
+        f"/api/v1/decks/{private_deck_id}/cards/",
+        json={
+            "front": [{"type": "image", "url": url}],
+            "back": [{"type": "text", "content": "Back"}],
+        },
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    card_id = create_resp.json()["id"]
+
+    with patch("src.routers.cards.delete_managed_images") as mock_del:
+        patch_resp = await async_client.patch(
+            f"/api/v1/decks/{private_deck_id}/cards/{card_id}",
+            json={"front": [{"type": "text", "content": "New Front"}]},
+            headers={"X-Test-Cookie": guest_token1},
+        )
+    assert patch_resp.status_code == 200
+    mock_del.assert_called_once_with([url], f"card-images/{guest_user_id}/")
+
+
+@pytest.mark.asyncio
+async def test_patch_card_removed_other_users_image_not_deleted(
+    async_client: AsyncClient,
+    guest_token1: str,
+    guest_user_id: str,
+    private_deck_id: int,
+):
+    """A card referencing another user's managed URL must not delete it."""
+    from unittest.mock import patch
+
+    other_url = "https://cdn.example.com/card-images/other-user/deck/c.webp"
+    create_resp = await async_client.post(
+        f"/api/v1/decks/{private_deck_id}/cards/",
+        json={
+            "front": [{"type": "image", "url": other_url}],
+            "back": [{"type": "text", "content": "Back"}],
+        },
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    card_id = create_resp.json()["id"]
+
+    with patch("src.routers.cards.delete_managed_images") as mock_del:
+        del_resp = await async_client.delete(
+            f"/api/v1/decks/{private_deck_id}/cards/{card_id}",
+            headers={"X-Test-Cookie": guest_token1},
+        )
+    assert del_resp.status_code == 204
+    mock_del.assert_called_once_with([other_url], f"card-images/{guest_user_id}/")
+
+
+@pytest.mark.asyncio
+async def test_patch_card_kept_image_no_cleanup(
+    async_client: AsyncClient,
+    guest_token1: str,
+    guest_user_id: str,
+    private_deck_id: int,
+):
+    from unittest.mock import patch
+
+    url = _managed_url(guest_user_id)
+    create_resp = await async_client.post(
+        f"/api/v1/decks/{private_deck_id}/cards/",
+        json={
+            "front": [{"type": "image", "url": url}],
+            "back": [{"type": "text", "content": "Back"}],
+        },
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    card_id = create_resp.json()["id"]
+
+    with patch("src.routers.cards.delete_managed_images") as mock_del:
+        patch_resp = await async_client.patch(
+            f"/api/v1/decks/{private_deck_id}/cards/{card_id}",
+            json={
+                "front": [
+                    {"type": "image", "url": url},
+                    {"type": "text", "content": "New"},
+                ],
+                "back": [{"type": "text", "content": "Back"}],
+            },
+            headers={"X-Test-Cookie": guest_token1},
+        )
+    assert patch_resp.status_code == 200
+    assert mock_del.call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_delete_card_cleans_up_image_s3(
+    async_client: AsyncClient,
+    guest_token1: str,
+    guest_user_id: str,
+    private_deck_id: int,
+):
+    from unittest.mock import patch
+
+    url = _managed_url(guest_user_id)
+    create_resp = await async_client.post(
+        f"/api/v1/decks/{private_deck_id}/cards/",
+        json={
+            "front": [{"type": "image", "url": url}],
+            "back": [{"type": "text", "content": "Back"}],
+        },
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    card_id = create_resp.json()["id"]
+
+    with patch("src.routers.cards.delete_managed_images") as mock_del:
+        del_resp = await async_client.delete(
+            f"/api/v1/decks/{private_deck_id}/cards/{card_id}",
+            headers={"X-Test-Cookie": guest_token1},
+        )
+    assert del_resp.status_code == 204
+    mock_del.assert_called_once_with([url], f"card-images/{guest_user_id}/")

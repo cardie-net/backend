@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -6,6 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .. import crud, models
 from ..auth.router import current_active_user
 from ..database import get_db
+from ..services.image_service import collect_image_urls
+from ..services.s3_service import CARD_IMAGE_PREFIX, delete_managed_images
 
 router = APIRouter(prefix="/decks/{deck_id}/cards", tags=["cards"])
 
@@ -59,7 +62,13 @@ async def delete_card(
     if not card or card.deck_id != deck_id:
         raise HTTPException(status_code=404, detail="Card not found")
 
+    urls = collect_image_urls(card.front, card.back)
     await crud.delete_card(db, db_card=card)
+
+    if urls:
+        await asyncio.to_thread(
+            delete_managed_images, urls, f"{CARD_IMAGE_PREFIX}{user.id}/"
+        )
 
 
 @router.patch("/{card_id}", response_model=models.CardRead)
@@ -81,7 +90,23 @@ async def update_card(
     if not card or card.deck_id != deck_id:
         raise HTTPException(status_code=404, detail="Card not found")
 
-    return await crud.update_card(db, db_card=card, card_update=card_update)
+    # Diff old vs new image URLs; delete S3 objects for managed images removed
+    # from the card (after a successful commit, so a DB failure leaves them intact)
+    old_urls = set(collect_image_urls(card.front, card.back))
+    new_front = card_update.front if card_update.front is not None else card.front
+    new_back = card_update.back if card_update.back is not None else card.back
+    removed_urls = old_urls - set(collect_image_urls(new_front, new_back))
+
+    updated = await crud.update_card(db, db_card=card, card_update=card_update)
+
+    if removed_urls:
+        await asyncio.to_thread(
+            delete_managed_images,
+            list(removed_urls),
+            f"{CARD_IMAGE_PREFIX}{user.id}/",
+        )
+
+    return updated
 
 
 @router.post("/reorder")

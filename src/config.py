@@ -8,9 +8,11 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite+aiosqlite:///./sql_app.db"
     JWT_ALGORITHM: str = "HS256"
 
-    # Image Settings
-    IMAGE_MAX_SIZE: int = 512
+    # Image Settings (dimensions in pixels; MAX_UPLOAD_SIZE in bytes)
+    AVATAR_MAX_SIZE: int = 512
     IMAGE_QUALITY: int = 80
+    CARD_IMAGE_MAX_SIZE: int = 1024
+    MAX_UPLOAD_SIZE: int = 10 * 1024 * 1024  # 10 MB
 
     # Email Settings
     SMTP_SERVER: str = ""
@@ -29,7 +31,6 @@ class Settings(BaseSettings):
     S3_BUCKET_NAME: str = ""
     AWS_ENDPOINT_URL: str = ""
     S3_PUBLIC_URL: str = ""
-    S3_AVATAR_PREFIX: str = "avatars/"
 
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
