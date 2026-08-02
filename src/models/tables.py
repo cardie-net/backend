@@ -15,7 +15,12 @@ class TextElement(SQLModel):
     content: str
 
 
-CardElement = TextElement
+class ImageElement(SQLModel):
+    type: Literal["image"]
+    url: str
+
+
+CardElement = TextElement | ImageElement
 
 
 # --- OAuth Account ---
