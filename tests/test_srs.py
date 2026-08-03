@@ -61,7 +61,7 @@ async def test_srs_flow(async_client: AsyncClient, guest_token: str):
     assert len(study_data["review_cards"]) == 0
 
     # 5. Submit reviews
-    # Card 0 -> Again (0): becomes learning
+    # Card 0 -> Again (0): stays in today's learning queue (short step, due today)
     # Card 1 -> Good (2): reps=1, interval=1.0, due tomorrow (not learning, not review today)
     # Card 2 -> Easy (3): reps=1, interval=4.0, due in 4 days
     review_payload = {
@@ -84,7 +84,8 @@ async def test_srs_flow(async_client: AsyncClient, guest_token: str):
     )
     counts2 = counts_resp2.json()[deck_id]
     assert counts2["new_count"] == 0
-    assert counts2["learning_count"] == 0  # Card 0 has interval 1.0, due tomorrow
+    # Card 0 was rated "again" -> still due today, so it shows as learning
+    assert counts2["learning_count"] == 1
     assert counts2["review_count"] == 0  # Card 1 and 2 are due in the future
 
     # 7. Fetch study cards again
@@ -93,7 +94,10 @@ async def test_srs_flow(async_client: AsyncClient, guest_token: str):
     )
     study_data2 = study_resp2.json()
     assert len(study_data2["new_cards"]) == 0
-    assert len(study_data2["learning_cards"]) == 0
+    # Regression: a card marked "again" must be re-asked the same day, even
+    # if the user left the session before finishing (it lands in learning).
+    assert len(study_data2["learning_cards"]) == 1
+    assert study_data2["learning_cards"][0]["card_id"] == card_ids[0]
     assert len(study_data2["review_cards"]) == 0
 
 

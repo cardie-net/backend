@@ -15,6 +15,10 @@ from ..models import (
     SRSStudyResponse,
 )
 
+# Learning step for cards rated "again": a sub-day interval so the card stays
+# due today (re-asked on the next visit today) instead of being pushed to tomorrow.
+LEARNING_STEP_DAYS = 10 / (24 * 60)  # ~10 minutes
+
 
 def compute_srs_schedule(
     rating: int, current_reps: int, current_interval: float, current_ef: float
@@ -26,7 +30,7 @@ def compute_srs_schedule(
 
     if rating == 0:
         new_reps = 0
-        new_interval = 1.0
+        new_interval = LEARNING_STEP_DAYS
     elif rating == 1:
         new_interval = max(1.0, current_interval * 1.2)
     elif rating == 2:
