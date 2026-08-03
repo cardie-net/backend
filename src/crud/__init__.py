@@ -18,6 +18,7 @@ from .folder import (
     create_folder_for_user,
     delete_folder,
     get_folder,
+    get_folder_by_username_and_slug,
     get_folders_for_user,
     update_folder,
 )
@@ -50,6 +51,7 @@ __all__ = [
     "delete_deck",
     "update_deck",
     "get_deck_by_username_and_slug",
+    "get_folder_by_username_and_slug",
     "get_deck_progress",
     "sync_deck_progress",
     "compute_srs_schedule",

@@ -8,7 +8,7 @@ from .folder import get_folder
 
 
 async def get_folder_items_recursive(
-    db: AsyncSession, folder_id: uuid.UUID, requesting_user_id: uuid.UUID
+    db: AsyncSession, folder_id: uuid.UUID, requesting_user_id: uuid.UUID | None
 ) -> list[models.Folder | models.Deck] | None:
     """Recursively fetch all items in a folder, respecting privacy."""
     folder = await get_folder(db, folder_id=folder_id)
@@ -16,7 +16,7 @@ async def get_folder_items_recursive(
     if not folder:
         return None
 
-    is_owner = folder.user_id == requesting_user_id
+    is_owner = requesting_user_id is not None and folder.user_id == requesting_user_id
     if not is_owner and folder.privacy == models.PrivacyLevel.PRIVATE:
         return None
 
@@ -27,13 +27,13 @@ async def get_folder_items_recursive(
         visited.add(current_folder.id)
 
         for d in current_folder.decks:
-            if owner_access or d.privacy == models.PrivacyLevel.PUBLIC:
+            if owner_access or d.privacy != models.PrivacyLevel.PRIVATE:
                 items.append(d)
 
         for f in current_folder.child_folders:
             if f.id in visited:
                 continue
-            if owner_access or f.privacy == models.PrivacyLevel.PUBLIC:
+            if owner_access or f.privacy != models.PrivacyLevel.PRIVATE:
                 items.append(f)
 
                 full_f = await get_folder(db, folder_id=f.id)
@@ -45,10 +45,10 @@ async def get_folder_items_recursive(
 
 
 async def get_user_items(
-    db: AsyncSession, target_user_id: uuid.UUID, requesting_user_id: uuid.UUID
+    db: AsyncSession, target_user_id: uuid.UUID, requesting_user_id: uuid.UUID | None
 ) -> list[models.Folder | models.Deck]:
     """Fetch all top-level items for a user, respecting privacy."""
-    is_owner = target_user_id == requesting_user_id
+    is_owner = requesting_user_id is not None and target_user_id == requesting_user_id
 
     stmt_folders = select(models.Folder).where(models.Folder.user_id == target_user_id)
     res_folders = await db.execute(stmt_folders)

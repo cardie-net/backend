@@ -17,6 +17,7 @@ from ..services.s3_service import (
     delete_managed_images,
     upload_file_to_s3,
 )
+from ..utils import is_slug_taken
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,11 @@ async def create_deck(
             raise HTTPException(status_code=404, detail="Folder not found")
         if folder.user_id != user.id:
             raise HTTPException(status_code=403, detail="Not enough permissions")
+
+    if deck.slug and await is_slug_taken(db, user_id=user.id, slug=deck.slug):
+        raise HTTPException(
+            status_code=400, detail="Deck with this slug already exists"
+        )
 
     try:
         return await crud.create_deck_for_user(db=db, deck=deck, user_id=user.id)
@@ -153,12 +159,19 @@ async def update_deck(
         if folder.user_id != user.id:
             raise HTTPException(status_code=403, detail="Not enough permissions")
 
+    if deck_update.slug is not None and await is_slug_taken(
+        db, user_id=user.id, slug=deck_update.slug, exclude_id=deck_id
+    ):
+        raise HTTPException(
+            status_code=400, detail="Deck with this slug already exists"
+        )
+
     try:
         return await crud.update_deck(db=db, db_deck=db_deck, deck_update=deck_update)
     except sqlalchemy.exc.IntegrityError as exc:
         await db.rollback()
         raise HTTPException(
-            status_code=400, detail="Deck with this slug already exists"
+            status_code=400, detail="Deck or folder with this slug already exists"
         ) from exc
 
 

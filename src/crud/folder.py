@@ -53,6 +53,23 @@ async def get_folder(db: AsyncSession, folder_id: uuid.UUID) -> models.Folder | 
     return result.scalars().first()
 
 
+async def get_folder_by_username_and_slug(
+    db: AsyncSession, username: str, slug: str
+) -> models.Folder | None:
+    """Retrieve a folder by its owner's username and the folder's slug."""
+    statement = (
+        select(models.Folder)
+        .join(models.User, models.Folder.user_id == models.User.id)
+        .where(models.User.username == username, models.Folder.slug == slug)
+        .options(
+            selectinload(models.Folder.child_folders),
+            selectinload(models.Folder.decks),
+        )
+    )
+    result = await db.execute(statement)
+    return result.scalars().first()
+
+
 async def update_folder(
     db: AsyncSession, folder_id: uuid.UUID, folder_update: models.FolderUpdate
 ) -> models.Folder | None:

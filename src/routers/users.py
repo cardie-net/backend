@@ -191,6 +191,33 @@ async def get_user_deck_by_slug(
 
 
 @router.get(
+    "/profile/{username}/folders/{folder_slug}", response_model=models.FolderRead
+)
+async def get_user_folder_by_slug(
+    username: str,
+    folder_slug: str,
+    user: models.User | None = Depends(get_optional_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> models.Folder:
+    """Retrieve a user's folder by slug."""
+    db_folder = await crud.get_folder_by_username_and_slug(
+        db, username=username, slug=folder_slug
+    )
+    if not db_folder:
+        raise HTTPException(status_code=404, detail="Folder not found")
+
+    current_user_id = user.id if user else None
+
+    if (
+        db_folder.user_id != current_user_id
+        and db_folder.privacy == models.PrivacyLevel.PRIVATE
+    ):
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+
+    return db_folder
+
+
+@router.get(
     "/{user_id}/items", response_model=list[models.FolderRead | models.DeckRead]
 )
 async def get_user_items(

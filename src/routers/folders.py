@@ -6,7 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import crud, models
 from ..auth.router import current_active_user
+from ..auth.utils import get_optional_current_user
 from ..database import get_db
+from ..utils import is_slug_taken
 
 router = APIRouter(prefix="/folders", tags=["folders"])
 
@@ -25,13 +27,37 @@ async def create_folder(
         if parent_folder.user_id != user.id:
             raise HTTPException(status_code=403, detail="Not enough permissions")
 
+    if folder.slug and await is_slug_taken(db, user_id=user.id, slug=folder.slug):
+        raise HTTPException(
+            status_code=400, detail="Folder or deck with this slug already exists"
+        )
+
     try:
         return await crud.create_folder_for_user(db=db, folder=folder, user_id=user.id)
     except sqlalchemy.exc.IntegrityError as exc:
         await db.rollback()
         raise HTTPException(
-            status_code=400, detail="Folder with this slug already exists"
+            status_code=400, detail="Folder or deck with this slug already exists"
         ) from exc
+
+
+@router.get("/{folder_id}", response_model=models.FolderRead)
+async def get_folder(
+    folder_id: uuid.UUID,
+    user: models.User | None = Depends(get_optional_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> models.FolderRead:
+    """Retrieve a specific folder by ID."""
+    db_folder = await crud.get_folder(db, folder_id=folder_id)
+    if not db_folder:
+        raise HTTPException(status_code=404, detail="Folder not found")
+    user_id = user.id if user else None
+    if (
+        db_folder.user_id != user_id
+        and db_folder.privacy == models.PrivacyLevel.PRIVATE
+    ):
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+    return db_folder
 
 
 @router.get(
@@ -39,12 +65,13 @@ async def create_folder(
 )
 async def get_folder_items(
     folder_id: uuid.UUID,
-    user: models.User = Depends(current_active_user),
+    user: models.User | None = Depends(get_optional_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[models.FolderRead | models.DeckRead]:
     """Retrieve all items within a specific folder."""
+    requesting_user_id = user.id if user else None
     items = await crud.get_folder_items_recursive(
-        db, folder_id=folder_id, requesting_user_id=user.id
+        db, folder_id=folder_id, requesting_user_id=requesting_user_id
     )
     if items is None:
         raise HTTPException(status_code=404, detail="Folder not found")
@@ -72,6 +99,13 @@ async def update_folder(
         if parent_folder.user_id != user.id:
             raise HTTPException(status_code=403, detail="Not enough permissions")
 
+    if folder_update.slug is not None and await is_slug_taken(
+        db, user_id=user.id, slug=folder_update.slug, exclude_id=folder_id
+    ):
+        raise HTTPException(
+            status_code=400, detail="Folder or deck with this slug already exists"
+        )
+
     try:
         updated_folder = await crud.update_folder(
             db=db, folder_id=folder_id, folder_update=folder_update
@@ -80,7 +114,7 @@ async def update_folder(
     except sqlalchemy.exc.IntegrityError as exc:
         await db.rollback()
         raise HTTPException(
-            status_code=400, detail="Folder with this slug already exists"
+            status_code=400, detail="Folder or deck with this slug already exists"
         ) from exc
 
 
