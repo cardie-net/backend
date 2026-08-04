@@ -428,7 +428,7 @@ async def test_create_folder_with_properties(
     )
     assert response.status_code == 200
     data = response.json()
-    assert data.get("properties") == {"color": "#ff0000"}
+    assert data.get("properties")["color"] == "#ff0000"
 
 
 @pytest.mark.asyncio
@@ -480,3 +480,134 @@ async def test_create_folder_invalid_properties(
         headers={"X-Test-Cookie": guest_token1},
     )
     assert response2.status_code == 422
+
+
+async def test_upload_folder_cover_success(
+    async_client: AsyncClient, guest_token1: str
+):
+    from unittest.mock import patch
+
+    # Create a folder
+    create_resp = await async_client.post(
+        "/api/v1/folders",
+        json={"name": "Test Folder"},
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    folder_id = create_resp.json()["id"]
+
+    with patch(
+        "src.routers.folders.upload_file_to_s3",
+        return_value="https://s3.com/cover-images/folder/cover.webp",
+    ) as mock_upload, patch(
+        "src.routers.folders.delete_file_from_s3"
+    ) as mock_delete, patch(
+        "src.routers.folders.optimize_image", return_value=b"optimized"
+    ):
+        files = {"file": ("cover.jpg", b"fake_image_content", "image/jpeg")}
+        response = await async_client.post(
+            f"/api/v1/folders/{folder_id}/cover",
+            headers={"X-Test-Cookie": guest_token1},
+            files=files,
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert (
+            data["properties"]["cover_image_url"]
+            == "https://s3.com/cover-images/folder/cover.webp"
+        )
+        mock_upload.assert_called_once()
+        mock_delete.assert_not_called()
+
+        # Upload again to trigger delete
+        files2 = {"file": ("cover2.jpg", b"fake_image_content2", "image/jpeg")}
+        response2 = await async_client.post(
+            f"/api/v1/folders/{folder_id}/cover",
+            headers={"X-Test-Cookie": guest_token1},
+            files=files2,
+        )
+        assert response2.status_code == 200
+        mock_delete.assert_called_once()
+
+
+async def test_delete_folder_cleans_up_cover_image(
+    async_client: AsyncClient, guest_token1: str
+):
+    from unittest.mock import patch
+
+    create_resp = await async_client.post(
+        "/api/v1/folders",
+        json={"name": "Test Folder"},
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    folder_id = create_resp.json()["id"]
+
+    await async_client.patch(
+        f"/api/v1/folders/{folder_id}",
+        headers={"X-Test-Cookie": guest_token1},
+        json={
+            "properties": {
+                "cover_image_url": "https://s3.amazonaws.com/test-bucket/cover-images/test/test.webp"
+            }
+        },
+    )
+
+    with patch("src.routers.folders.delete_managed_images") as mock_del:
+        resp = await async_client.delete(
+            f"/api/v1/folders/{folder_id}",
+            headers={"X-Test-Cookie": guest_token1},
+        )
+        assert resp.status_code == 204
+        mock_del.assert_any_call(
+            ["https://s3.amazonaws.com/test-bucket/cover-images/test/test.webp"],
+            "cover-images/",
+        )
+
+
+async def test_patch_folder_cleans_up_cover_image(
+    async_client: AsyncClient, guest_token1: str
+):
+    from unittest.mock import patch
+
+    create_resp = await async_client.post(
+        "/api/v1/folders",
+        json={"name": "Test Folder"},
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    folder_id = create_resp.json()["id"]
+
+    await async_client.patch(
+        f"/api/v1/folders/{folder_id}",
+        headers={"X-Test-Cookie": guest_token1},
+        json={
+            "properties": {
+                "cover_image_url": "https://s3.amazonaws.com/test-bucket/cover-images/test/test.webp"
+            }
+        },
+    )
+
+    with patch("src.routers.folders.delete_file_from_s3") as mock_del:
+        resp = await async_client.patch(
+            f"/api/v1/folders/{folder_id}",
+            headers={"X-Test-Cookie": guest_token1},
+            json={"properties": {"cover_image_url": None}},
+        )
+        assert resp.status_code == 200
+        mock_del.assert_called_once()
+        assert mock_del.call_args[0][0] == "cover-images/test/test.webp"
+
+
+async def test_patch_folder_description(async_client: AsyncClient, guest_token1: str):
+    create_resp = await async_client.post(
+        "/api/v1/folders",
+        json={"name": "Test Folder"},
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    folder_id = create_resp.json()["id"]
+
+    resp = await async_client.patch(
+        f"/api/v1/folders/{folder_id}",
+        headers={"X-Test-Cookie": guest_token1},
+        json={"properties": {"description": "A nice folder"}},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["properties"]["description"] == "A nice folder"

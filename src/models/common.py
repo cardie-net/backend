@@ -31,18 +31,44 @@ class PrivacyLevel(str, Enum):
 class ItemProperties(BaseModel):
     model_config = ConfigDict(extra="forbid")
     color: str | None = None
+    description: str | None = None
+    cover_image_url: str | None = None
+
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, v: str | None) -> str | None:
+        if v is not None and len(v) > 500:
+            raise ValueError("Description must be 500 characters or fewer")
+        return v
 
 
-ALLOWED_SOCIAL_PLATFORMS = {
-    "instagram",
-    "facebook",
-    "twitter",
-    "linkedin",
-    "youtube",
-    "tiktok",
-    "github",
-    "website",
+SOCIAL_PLATFORM_PATTERNS: dict[str, re.Pattern] = {
+    "website": re.compile(r"^https?://[^\s/$.?#].[^\s]*$", re.IGNORECASE),
+    "github": re.compile(
+        r"^https?://(www\.)?github\.com/[a-zA-Z0-9_.-]+/?$", re.IGNORECASE
+    ),
+    "twitter": re.compile(
+        r"^https?://(www\.)?(twitter\.com|x\.com)/[a-zA-Z0-9_.-]+/?$", re.IGNORECASE
+    ),
+    "instagram": re.compile(
+        r"^https?://(www\.)?instagram\.com/[a-zA-Z0-9_.-]+/?$", re.IGNORECASE
+    ),
+    "youtube": re.compile(
+        r"^https?://(www\.)?youtube\.com/(@[a-zA-Z0-9_.-]+|[a-zA-Z0-9_.-]+|c/[a-zA-Z0-9_.-]+|channel/[a-zA-Z0-9_.-]+|user/[a-zA-Z0-9_.-]+)/?$",
+        re.IGNORECASE,
+    ),
+    "linkedin": re.compile(
+        r"^https?://(www\.)?linkedin\.com/in/[a-zA-Z0-9_.-]+/?$", re.IGNORECASE
+    ),
+    "tiktok": re.compile(
+        r"^https?://(www\.)?tiktok\.com/(@[a-zA-Z0-9_.-]+|[a-zA-Z0-9_.-]+)/?$",
+        re.IGNORECASE,
+    ),
+    "facebook": re.compile(
+        r"^https?://(www\.)?facebook\.com/[a-zA-Z0-9_.-]+/?$", re.IGNORECASE
+    ),
 }
+ALLOWED_SOCIAL_PLATFORMS = set(SOCIAL_PLATFORM_PATTERNS.keys())
 
 
 class SocialLinks(BaseModel):
@@ -61,8 +87,10 @@ class SocialLinks(BaseModel):
     def validate_urls(self) -> "SocialLinks":
         for platform in ALLOWED_SOCIAL_PLATFORMS:
             value = getattr(self, platform)
-            if value is not None and not URL_PATTERN.match(value):
-                raise ValueError(f"Invalid URL for {platform}: {value}")
+            if value is not None:
+                pattern = SOCIAL_PLATFORM_PATTERNS.get(platform, URL_PATTERN)
+                if not pattern.match(value):
+                    raise ValueError(f"Invalid URL for {platform}: {value}")
         return self
 
 

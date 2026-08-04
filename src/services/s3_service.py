@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 # Object-key namespaces inside the S3 bucket
 AVATAR_PREFIX = "avatars/"
 CARD_IMAGE_PREFIX = "card-images/"
+COVER_IMAGE_PREFIX = "cover-images/"
 
 
 def get_s3_client():

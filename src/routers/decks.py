@@ -14,7 +14,10 @@ from ..database import get_db
 from ..services.image_service import collect_image_urls, optimize_image
 from ..services.s3_service import (
     CARD_IMAGE_PREFIX,
+    COVER_IMAGE_PREFIX,
+    delete_file_from_s3,
     delete_managed_images,
+    extract_object_name_from_url,
     upload_file_to_s3,
 )
 from ..utils import is_slug_taken
@@ -94,6 +97,58 @@ async def upload_card_image(
         raise HTTPException(status_code=500, detail="Failed to upload image")
 
 
+@router.post("/{deck_id}/cover", response_model=models.DeckRead)
+async def upload_deck_cover(
+    deck_id: uuid.UUID,
+    file: fastapi.UploadFile = fastapi.File(...),
+    user: models.User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> models.DeckRead:
+    """Upload a cover image for a deck."""
+    db_deck = await crud.get_deck(db, deck_id=deck_id)
+    if not db_deck:
+        raise HTTPException(status_code=404, detail="Deck not found")
+    if db_deck.user_id != user.id:
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="File must be an image")
+
+    try:
+        contents = await file.read(settings.MAX_UPLOAD_SIZE + 1)
+        if len(contents) > settings.MAX_UPLOAD_SIZE:
+            raise HTTPException(status_code=413, detail="File too large")
+
+        optimized_bytes = await asyncio.to_thread(optimize_image, contents)
+
+        old_cover = (
+            db_deck.properties.get("cover_image_url") if db_deck.properties else None
+        )
+
+        object_name = f"{COVER_IMAGE_PREFIX}{user.id}/{deck_id}/{uuid.uuid4()}.webp"
+        image_url = await asyncio.to_thread(
+            upload_file_to_s3, optimized_bytes, object_name, "image/webp"
+        )
+
+        properties = dict(db_deck.properties) if db_deck.properties else {}
+        properties["cover_image_url"] = image_url
+        deck_update = models.DeckUpdate(properties=models.ItemProperties(**properties))
+        updated_deck = await crud.update_deck(
+            db=db, db_deck=db_deck, deck_update=deck_update
+        )
+
+        if old_cover:
+            old_cover_obj = extract_object_name_from_url(old_cover, COVER_IMAGE_PREFIX)
+            if old_cover_obj:
+                await asyncio.to_thread(delete_file_from_s3, old_cover_obj)
+
+        return updated_deck
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to upload deck cover: {e}")
+        raise HTTPException(status_code=500, detail="Failed to upload image")
+
+
 @router.get("/{deck_id}", response_model=models.DeckRead)
 async def get_deck(
     deck_id: uuid.UUID,
@@ -127,6 +182,11 @@ async def delete_deck(
         for card in await crud.get_cards_for_deck(db, deck_id=deck_id)
         for url in collect_image_urls(card.front, card.back)
     ]
+
+    old_cover = (
+        db_deck.properties.get("cover_image_url") if db_deck.properties else None
+    )
+
     await crud.delete_deck(db=db, db_deck=db_deck)
 
     if card_urls:
@@ -135,6 +195,11 @@ async def delete_deck(
             card_urls,
             f"{CARD_IMAGE_PREFIX}{user.id}/",
         )
+    if old_cover:
+        old_cover_obj = extract_object_name_from_url(old_cover, COVER_IMAGE_PREFIX)
+        if old_cover_obj:
+            await asyncio.to_thread(delete_file_from_s3, old_cover_obj)
+
     return None
 
 
@@ -167,7 +232,25 @@ async def update_deck(
         )
 
     try:
-        return await crud.update_deck(db=db, db_deck=db_deck, deck_update=deck_update)
+        old_cover = (
+            db_deck.properties.get("cover_image_url") if db_deck.properties else None
+        )
+
+        updated_deck = await crud.update_deck(
+            db=db, db_deck=db_deck, deck_update=deck_update
+        )
+
+        new_cover = (
+            updated_deck.properties.get("cover_image_url")
+            if updated_deck.properties
+            else None
+        )
+        if old_cover and old_cover != new_cover:
+            old_cover_obj = extract_object_name_from_url(old_cover, COVER_IMAGE_PREFIX)
+            if old_cover_obj:
+                await asyncio.to_thread(delete_file_from_s3, old_cover_obj)
+
+        return updated_deck
     except sqlalchemy.exc.IntegrityError as exc:
         await db.rollback()
         raise HTTPException(

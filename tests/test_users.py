@@ -337,6 +337,48 @@ async def test_patch_user_invalid_social_media_platform(
     assert response.status_code == 422
 
 
+@pytest.mark.asyncio
+async def test_patch_user_strict_social_link_url_validation(
+    async_client: AsyncClient, guest_token1: str
+):
+    token = guest_token1
+
+    # Invalid domain for github (e.g. twitter link sent for github)
+    resp = await async_client.patch(
+        "/api/v1/users/me",
+        headers={"X-Test-Cookie": token},
+        json={"social_links": {"github": "https://twitter.com/octocat"}},
+    )
+    assert resp.status_code == 422
+
+    # Valid github link
+    resp = await async_client.patch(
+        "/api/v1/users/me",
+        headers={"X-Test-Cookie": token},
+        json={"social_links": {"github": "https://github.com/octocat"}},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["social_links"]["github"] == "https://github.com/octocat"
+
+    # Valid twitter (x.com) link
+    resp = await async_client.patch(
+        "/api/v1/users/me",
+        headers={"X-Test-Cookie": token},
+        json={"social_links": {"twitter": "https://x.com/jack"}},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["social_links"]["twitter"] == "https://x.com/jack"
+
+    # Valid website link
+    resp = await async_client.patch(
+        "/api/v1/users/me",
+        headers={"X-Test-Cookie": token},
+        json={"social_links": {"website": "https://customdomain.org"}},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["social_links"]["website"] == "https://customdomain.org"
+
+
 @pytest.fixture
 async def guest_token2(async_client: AsyncClient) -> str:
     response = await async_client.post("/api/v1/auth/guest")
