@@ -67,7 +67,13 @@ async def update_deck(
     """Update properties of a specific deck."""
     update_data = deck_update.model_dump(exclude_unset=True)
     for key, value in update_data.items():
-        setattr(db_deck, key, value)
+        if key == "properties" and isinstance(value, dict) and db_deck.properties:
+            # Merge the new properties into the existing ones
+            merged_properties = dict(db_deck.properties)
+            merged_properties.update(value)
+            setattr(db_deck, key, merged_properties)
+        else:
+            setattr(db_deck, key, value)
     db.add(db_deck)
     await db.commit()
     await db.refresh(db_deck)

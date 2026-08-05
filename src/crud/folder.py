@@ -80,7 +80,12 @@ async def update_folder(
 
     update_data = folder_update.model_dump(exclude_unset=True)
     for key, value in update_data.items():
-        setattr(db_folder, key, value)
+        if key == "properties" and isinstance(value, dict) and db_folder.properties:
+            merged_properties = dict(db_folder.properties)
+            merged_properties.update(value)
+            setattr(db_folder, key, merged_properties)
+        else:
+            setattr(db_folder, key, value)
 
     db.add(db_folder)
     await db.commit()
