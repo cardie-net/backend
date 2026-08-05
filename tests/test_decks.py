@@ -822,3 +822,39 @@ async def test_patch_deck_description(
     )
     assert resp.status_code == 200
     assert resp.json()["properties"]["description"] == "A very nice deck"
+
+
+@pytest.mark.asyncio
+async def test_deck_cards_count(async_client: AsyncClient, guest_token: str):
+    response = await async_client.post(
+        "/api/v1/decks",
+        json={"name": "Cards Count Deck", "privacy": "private"},
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert response.status_code == 200
+    deck_id = response.json()["id"]
+
+    response = await async_client.get(
+        f"/api/v1/decks/{deck_id}",
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert response.status_code == 200
+    assert response.json()["cards_count"] == 0
+
+    for _ in range(3):
+        res = await async_client.post(
+            f"/api/v1/decks/{deck_id}/cards/",
+            json={
+                "front": [{"type": "text", "content": "f"}],
+                "back": [{"type": "text", "content": "b"}],
+            },
+            headers={"X-Test-Cookie": guest_token},
+        )
+        assert res.status_code == 200
+
+    response = await async_client.get(
+        f"/api/v1/decks/{deck_id}",
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert response.status_code == 200
+    assert response.json()["cards_count"] == 3

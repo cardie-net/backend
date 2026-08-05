@@ -2,7 +2,8 @@ import uuid
 from typing import Any, Literal, Optional
 
 from pydantic import field_validator
-from sqlalchemy import JSON, Column, UniqueConstraint
+from sqlalchemy import JSON, Column, UniqueConstraint, func, select, text
+from sqlalchemy.orm import column_property
 from sqlmodel import Field, Relationship, SQLModel
 
 from .common import PrivacyLevel, validate_slug
@@ -115,6 +116,23 @@ class Folder(FolderBase, table=True):
         return "folder"
 
 
+# --- Card Models ---
+
+
+class CardBase(SQLModel):
+    front: list[CardElement] = Field(sa_column=Column(JSON))
+    back: list[CardElement] = Field(sa_column=Column(JSON))
+    order: int = Field(default=0)
+
+
+class Card(CardBase, table=True):
+    __tablename__ = "cards"
+    id: uuid.UUID | None = Field(default_factory=uuid.uuid4, primary_key=True)
+    deck_id: uuid.UUID | None = Field(default=None, foreign_key="decks.id")
+
+    deck: Optional["Deck"] = Relationship(back_populates="cards")
+
+
 # --- Deck Models ---
 
 
@@ -150,23 +168,6 @@ class Deck(DeckBase, table=True):
         return "deck"
 
 
-# --- Card Models ---
-
-
-class CardBase(SQLModel):
-    front: list[CardElement] = Field(sa_column=Column(JSON))
-    back: list[CardElement] = Field(sa_column=Column(JSON))
-    order: int = Field(default=0)
-
-
-class Card(CardBase, table=True):
-    __tablename__ = "cards"
-    id: uuid.UUID | None = Field(default_factory=uuid.uuid4, primary_key=True)
-    deck_id: uuid.UUID | None = Field(default=None, foreign_key="decks.id")
-
-    deck: Deck | None = Relationship(back_populates="cards")
-
-
 # --- Learning Progress Models ---
 
 
@@ -196,3 +197,11 @@ class SRSCardProgress(SQLModel, table=True):
     interval: float = Field(default=0.0)
     due_date: str | None = Field(default=None)
     last_reviewed: str | None = Field(default=None)
+
+
+Deck.cards_count = column_property(
+    select(func.count(Card.id))
+    .where(Card.deck_id == Deck.id)
+    .correlate_except(Card)
+    .scalar_subquery()
+)

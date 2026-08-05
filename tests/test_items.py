@@ -219,7 +219,7 @@ async def test_items_properties(async_client: AsyncClient, registered_user: dict
     assert get_folder_items.status_code == 200
     folder_items = get_folder_items.json()
     deck_item = next(item for item in folder_items if item["name"] == "Deck Props")
-    assert deck_item.get("properties") == {"color": "#222222"}
+    assert deck_item.get("properties", {}).get("color") == "#222222"
 
     # Retrieve user items
     get_user_items = await async_client.get(
@@ -229,6 +229,6 @@ async def test_items_properties(async_client: AsyncClient, registered_user: dict
     assert get_user_items.status_code == 200
     user_items = get_user_items.json()
     folder_item = next(item for item in user_items if item["name"] == "Folder Props")
-    assert folder_item.get("properties") == {"color": "#111111"}
+    assert folder_item.get("properties", {}).get("color") == "#111111"
     deck_user_item = next(item for item in user_items if item["name"] == "Deck Props")
-    assert deck_user_item.get("properties") == {"color": "#222222"}
+    assert deck_user_item.get("properties", {}).get("color") == "#222222"

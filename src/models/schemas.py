@@ -121,6 +121,7 @@ class DeckRead(DeckBase):
     folder_id: uuid.UUID | None = None
     properties: ItemProperties | None = None
     type: Literal["deck"]
+    cards_count: int = 0
 
 
 # --- Card Schemas ---
