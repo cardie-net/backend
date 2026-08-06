@@ -5,6 +5,7 @@ import fastapi
 import sqlalchemy.exc
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import select
 
 from .. import crud, models
@@ -35,6 +36,7 @@ def _user_to_dict(user: models.User) -> dict:
         "avatar_url": user.avatar_url,
         "bio": props.get("bio"),
         "social_links": props.get("social_links"),
+        "preferences": props.get("preferences"),
     }
 
 
@@ -55,9 +57,11 @@ async def update_current_user(
 
     bio = update_data.pop("bio", None)
     social_links = update_data.pop("social_links", None)
+    preferences = update_data.pop("preferences", None)
     needs_properties_update = (
         "bio" in user_update.model_fields_set
         or "social_links" in user_update.model_fields_set
+        or "preferences" in user_update.model_fields_set
     )
 
     if needs_properties_update:
@@ -70,7 +74,19 @@ async def update_current_user(
                 if social_links
                 else None
             )
+        if "preferences" in user_update.model_fields_set:
+            if preferences is not None:
+                existing_prefs = current_props.get("preferences") or {}
+                prefs_dict = (
+                    preferences if isinstance(preferences, dict) else preferences.copy()
+                )
+                for k, v in prefs_dict.items():
+                    existing_prefs[k] = v
+                current_props["preferences"] = existing_prefs
+            else:
+                current_props.pop("preferences", None)
         user.properties = current_props
+        flag_modified(user, "properties")
 
     for key, value in update_data.items():
         if key == "password" and value:

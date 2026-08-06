@@ -1,6 +1,8 @@
 import uuid
+from typing import Sequence
 
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import select
 
 from .. import models
@@ -72,6 +74,7 @@ async def update_deck(
             merged_properties = dict(db_deck.properties)
             merged_properties.update(value)
             setattr(db_deck, key, merged_properties)
+            flag_modified(db_deck, "properties")
         else:
             setattr(db_deck, key, value)
     db.add(db_deck)

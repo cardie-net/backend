@@ -18,6 +18,11 @@ from .tables import CardBase, CardElement, DeckBase, FolderBase
 # --- User Schemas ---
 
 
+class UserPreferences(BaseModel):
+    language: str | None = None
+    themeConfig: dict[str, Any] | None = None
+
+
 class UserRead(BaseModel):
     id: uuid.UUID
     email: str
@@ -30,6 +35,7 @@ class UserRead(BaseModel):
     avatar_url: str | None = None
     bio: str | None = None
     social_links: dict[str, str] | None = None
+    preferences: UserPreferences | None = None
 
 
 class UserCreate(BaseModel):
@@ -49,6 +55,7 @@ class UserUpdate(BaseModel):
     avatar_url: str | None = None
     bio: str | None = PydanticField(default=None, max_length=500)
     social_links: SocialLinks | None = None
+    preferences: UserPreferences | None = None
 
 
 # --- Folder Schemas ---

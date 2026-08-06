@@ -2,6 +2,7 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import select
 
 from .. import models
@@ -84,6 +85,7 @@ async def update_folder(
             merged_properties = dict(db_folder.properties)
             merged_properties.update(value)
             setattr(db_folder, key, merged_properties)
+            flag_modified(db_folder, "properties")
         else:
             setattr(db_folder, key, value)
 

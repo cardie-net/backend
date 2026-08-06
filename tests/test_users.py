@@ -494,3 +494,34 @@ async def test_get_user_deck_by_slug_not_found(
         f"/api/v1/users/profile/{username}/decks/non-existent-slug"
     )
     assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_update_user_preferences(async_client: AsyncClient, guest_token1: str):
+    response = await async_client.patch(
+        "/api/v1/users/me",
+        json={"preferences": {"language": "es", "themeConfig": {"presetId": "dark"}}},
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["preferences"]["language"] == "es"
+    assert data["preferences"]["themeConfig"]["presetId"] == "dark"
+
+    # Verify persistence
+    response2 = await async_client.get(
+        "/api/v1/users/me",
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    data2 = response2.json()
+    assert data2["preferences"]["language"] == "es"
+    assert data2["preferences"]["themeConfig"]["presetId"] == "dark"
+
+    # Clear preferences
+    response3 = await async_client.patch(
+        "/api/v1/users/me",
+        json={"preferences": None},
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    assert response3.status_code == 200
+    assert response3.json()["preferences"] is None
