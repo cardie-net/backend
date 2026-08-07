@@ -294,3 +294,24 @@ async def sync_deck_progress(
     await crud.sync_deck_progress(
         db, user_id=user.id, deck_id=deck_id, progress_updates=sync_request.progress
     )
+
+
+@router.post("/{deck_id}/transpose", status_code=204)
+async def transpose_deck(
+    deck_id: uuid.UUID,
+    user: models.User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Transpose all cards in a deck (swap front and back)."""
+    db_deck = await crud.get_deck(db, deck_id=deck_id)
+    if not db_deck:
+        raise HTTPException(status_code=404, detail="Deck not found")
+    if db_deck.user_id != user.id:
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+
+    cards = await crud.get_cards_for_deck(db, deck_id=deck_id)
+    for card in cards:
+        card.front, card.back = card.back, card.front
+        db.add(card)
+
+    await db.commit()

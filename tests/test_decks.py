@@ -858,3 +858,104 @@ async def test_deck_cards_count(async_client: AsyncClient, guest_token: str):
     )
     assert response.status_code == 200
     assert response.json()["cards_count"] == 3
+
+
+@pytest.mark.asyncio
+async def test_transpose_deck_success(async_client: AsyncClient, guest_token: str):
+    # Create deck
+    response = await async_client.post(
+        "/api/v1/decks",
+        json={"name": "Transpose Deck", "privacy": "private"},
+        headers={"X-Test-Cookie": guest_token},
+    )
+    deck_id = response.json()["id"]
+
+    # Add cards
+    card_data = [
+        {
+            "front": [{"type": "text", "content": "f1"}],
+            "back": [{"type": "text", "content": "b1"}],
+        },
+        {
+            "front": [{"type": "text", "content": "f2"}],
+            "back": [{"type": "image", "url": "http://example.com/b2.webp"}],
+        },
+    ]
+    for card in card_data:
+        res = await async_client.post(
+            f"/api/v1/decks/{deck_id}/cards/",
+            json=card,
+            headers={"X-Test-Cookie": guest_token},
+        )
+        assert res.status_code == 200
+
+    # Transpose
+    transpose_res = await async_client.post(
+        f"/api/v1/decks/{deck_id}/transpose",
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert transpose_res.status_code == 204
+
+    # Fetch cards to verify
+    cards_res = await async_client.get(
+        f"/api/v1/decks/{deck_id}/cards",
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert cards_res.status_code == 200
+    cards = cards_res.json()
+
+    # Sort to ensure predictable order
+    cards = sorted(cards, key=lambda c: c["order"])
+
+    assert len(cards) == 2
+    assert cards[0]["front"] == [{"type": "text", "content": "b1"}]
+    assert cards[0]["back"] == [{"type": "text", "content": "f1"}]
+    assert cards[1]["front"] == [{"type": "image", "url": "http://example.com/b2.webp"}]
+    assert cards[1]["back"] == [{"type": "text", "content": "f2"}]
+
+
+@pytest.mark.asyncio
+async def test_transpose_deck_not_found(async_client: AsyncClient, guest_token: str):
+    transpose_res = await async_client.post(
+        "/api/v1/decks/00000000-0000-0000-0000-000000999999/transpose",
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert transpose_res.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_transpose_deck_not_owned(
+    async_client: AsyncClient, guest_token: str, guest_token2: str
+):
+    # Create deck with guest_token
+    response = await async_client.post(
+        "/api/v1/decks",
+        json={"name": "Someone Elses Deck", "privacy": "private"},
+        headers={"X-Test-Cookie": guest_token},
+    )
+    deck_id = response.json()["id"]
+
+    # Try to transpose with guest_token2
+    transpose_res = await async_client.post(
+        f"/api/v1/decks/{deck_id}/transpose",
+        headers={"X-Test-Cookie": guest_token2},
+    )
+    assert transpose_res.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_transpose_deck_empty(async_client: AsyncClient, guest_token: str):
+    # Create deck
+    response = await async_client.post(
+        "/api/v1/decks",
+        json={"name": "Empty Deck", "privacy": "private"},
+        headers={"X-Test-Cookie": guest_token},
+    )
+    deck_id = response.json()["id"]
+
+    # Transpose empty deck
+    transpose_res = await async_client.post(
+        f"/api/v1/decks/{deck_id}/transpose",
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert transpose_res.status_code == 204
