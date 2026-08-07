@@ -959,3 +959,57 @@ async def test_transpose_deck_empty(async_client: AsyncClient, guest_token: str)
         headers={"X-Test-Cookie": guest_token},
     )
     assert transpose_res.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_deck_match_time(async_client: AsyncClient, guest_token: str):
+    response = await async_client.post(
+        "/api/v1/decks",
+        json={"name": "Match Deck", "privacy": "private"},
+        headers={"X-Test-Cookie": guest_token},
+    )
+    deck_id = response.json()["id"]
+
+    res = await async_client.get(
+        f"/api/v1/decks/{deck_id}/match-time",
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert res.status_code == 200
+    assert res.json()["best_time_ms"] is None
+
+    res = await async_client.post(
+        f"/api/v1/decks/{deck_id}/match-time",
+        json={"time_ms": 15000},
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert res.status_code == 200
+    assert res.json()["best_time_ms"] == 15000
+
+    res = await async_client.post(
+        f"/api/v1/decks/{deck_id}/match-time",
+        json={"time_ms": 16000},
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert res.status_code == 200
+    assert res.json()["best_time_ms"] == 15000
+
+    res = await async_client.post(
+        f"/api/v1/decks/{deck_id}/match-time",
+        json={"time_ms": 12000},
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert res.status_code == 200
+    assert res.json()["best_time_ms"] == 12000
+
+    res = await async_client.delete(
+        f"/api/v1/decks/{deck_id}/match-time",
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert res.status_code == 204
+
+    res = await async_client.get(
+        f"/api/v1/decks/{deck_id}/match-time",
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert res.status_code == 200
+    assert res.json()["best_time_ms"] is None

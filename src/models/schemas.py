@@ -131,6 +131,14 @@ class DeckRead(DeckBase):
     cards_count: int = 0
 
 
+class DeckMatchTimeUpdate(BaseModel):
+    time_ms: int
+
+
+class DeckMatchTimeRead(BaseModel):
+    best_time_ms: int | None
+
+
 # --- Card Schemas ---
 
 

@@ -7,12 +7,15 @@ from .card import (
     update_card,
 )
 from .deck import (
+    clear_deck_match_time,
     create_deck_for_user,
     delete_deck,
     get_deck,
     get_deck_by_username_and_slug,
+    get_deck_match_time,
     get_decks_for_user,
     update_deck,
+    update_deck_match_time,
 )
 from .folder import (
     create_folder_for_user,
@@ -50,6 +53,9 @@ __all__ = [
     "get_user_items",
     "delete_deck",
     "update_deck",
+    "get_deck_match_time",
+    "update_deck_match_time",
+    "clear_deck_match_time",
     "get_deck_by_username_and_slug",
     "get_folder_by_username_and_slug",
     "get_deck_progress",

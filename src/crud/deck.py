@@ -81,3 +81,40 @@ async def update_deck(
     await db.commit()
     await db.refresh(db_deck)
     return db_deck
+
+
+async def get_deck_match_time(
+    db: AsyncSession, user_id: uuid.UUID, deck_id: uuid.UUID
+) -> models.DeckMatchTime | None:
+    statement = select(models.DeckMatchTime).where(
+        models.DeckMatchTime.user_id == user_id,
+        models.DeckMatchTime.deck_id == deck_id,
+    )
+    result = await db.execute(statement)
+    return result.scalars().first()
+
+
+async def update_deck_match_time(
+    db: AsyncSession, user_id: uuid.UUID, deck_id: uuid.UUID, time_ms: int
+) -> models.DeckMatchTime:
+    match_time = await get_deck_match_time(db, user_id, deck_id)
+    if not match_time:
+        match_time = models.DeckMatchTime(
+            user_id=user_id, deck_id=deck_id, best_time_ms=time_ms
+        )
+        db.add(match_time)
+    elif time_ms < match_time.best_time_ms:
+        match_time.best_time_ms = time_ms
+        db.add(match_time)
+    await db.commit()
+    await db.refresh(match_time)
+    return match_time
+
+
+async def clear_deck_match_time(
+    db: AsyncSession, user_id: uuid.UUID, deck_id: uuid.UUID
+) -> None:
+    match_time = await get_deck_match_time(db, user_id, deck_id)
+    if match_time:
+        await db.delete(match_time)
+        await db.commit()

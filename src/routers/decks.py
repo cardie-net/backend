@@ -315,3 +315,53 @@ async def transpose_deck(
         db.add(card)
 
     await db.commit()
+
+
+@router.get("/{deck_id}/match-time", response_model=models.DeckMatchTimeRead)
+async def get_deck_match_time(
+    deck_id: uuid.UUID,
+    user: models.User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> models.DeckMatchTimeRead:
+    """Get the best match time for the current user and deck."""
+    db_deck = await crud.get_deck(db, deck_id=deck_id)
+    if not db_deck:
+        raise HTTPException(status_code=404, detail="Deck not found")
+
+    match_time = await crud.get_deck_match_time(db, user_id=user.id, deck_id=deck_id)
+    if not match_time:
+        return models.DeckMatchTimeRead(best_time_ms=None)
+    return models.DeckMatchTimeRead(best_time_ms=match_time.best_time_ms)
+
+
+@router.post("/{deck_id}/match-time", response_model=models.DeckMatchTimeRead)
+async def update_deck_match_time(
+    deck_id: uuid.UUID,
+    match_time_update: models.DeckMatchTimeUpdate,
+    user: models.User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> models.DeckMatchTimeRead:
+    """Update the best match time for the current user and deck."""
+    db_deck = await crud.get_deck(db, deck_id=deck_id)
+    if not db_deck:
+        raise HTTPException(status_code=404, detail="Deck not found")
+
+    match_time = await crud.update_deck_match_time(
+        db, user_id=user.id, deck_id=deck_id, time_ms=match_time_update.time_ms
+    )
+    return models.DeckMatchTimeRead(best_time_ms=match_time.best_time_ms)
+
+
+@router.delete("/{deck_id}/match-time", status_code=204)
+async def clear_deck_match_time(
+    deck_id: uuid.UUID,
+    user: models.User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Clear the best match time for the current user and deck."""
+    db_deck = await crud.get_deck(db, deck_id=deck_id)
+    if not db_deck:
+        raise HTTPException(status_code=404, detail="Deck not found")
+
+    await crud.clear_deck_match_time(db, user_id=user.id, deck_id=deck_id)
+    return None
