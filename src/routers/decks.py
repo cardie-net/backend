@@ -365,3 +365,60 @@ async def clear_deck_match_time(
 
     await crud.clear_deck_match_time(db, user_id=user.id, deck_id=deck_id)
     return None
+
+
+@router.get("/{deck_id}/exam-score", response_model=models.DeckExamScoreRead)
+async def get_deck_exam_score(
+    deck_id: uuid.UUID,
+    user: models.User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> models.DeckExamScoreRead:
+    """Get the best exam score percentage for the current user and deck."""
+    db_deck = await crud.get_deck(db, deck_id=deck_id)
+    if not db_deck:
+        raise HTTPException(status_code=404, detail="Deck not found")
+
+    exam_score = await crud.get_deck_exam_score(db, user_id=user.id, deck_id=deck_id)
+    if not exam_score:
+        return models.DeckExamScoreRead(best_score_percentage=None)
+    return models.DeckExamScoreRead(
+        best_score_percentage=exam_score.best_score_percentage
+    )
+
+
+@router.post("/{deck_id}/exam-score", response_model=models.DeckExamScoreRead)
+async def update_deck_exam_score(
+    deck_id: uuid.UUID,
+    exam_score_update: models.DeckExamScoreUpdate,
+    user: models.User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> models.DeckExamScoreRead:
+    """Update the best exam score percentage for the current user and deck."""
+    db_deck = await crud.get_deck(db, deck_id=deck_id)
+    if not db_deck:
+        raise HTTPException(status_code=404, detail="Deck not found")
+
+    exam_score = await crud.update_deck_exam_score(
+        db,
+        user_id=user.id,
+        deck_id=deck_id,
+        score_percentage=exam_score_update.score_percentage,
+    )
+    return models.DeckExamScoreRead(
+        best_score_percentage=exam_score.best_score_percentage
+    )
+
+
+@router.delete("/{deck_id}/exam-score", status_code=204)
+async def clear_deck_exam_score(
+    deck_id: uuid.UUID,
+    user: models.User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Clear the best exam score for the current user and deck."""
+    db_deck = await crud.get_deck(db, deck_id=deck_id)
+    if not db_deck:
+        raise HTTPException(status_code=404, detail="Deck not found")
+
+    await crud.clear_deck_exam_score(db, user_id=user.id, deck_id=deck_id)
+    return None

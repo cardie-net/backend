@@ -139,6 +139,14 @@ class DeckMatchTimeRead(BaseModel):
     best_time_ms: int | None
 
 
+class DeckExamScoreUpdate(BaseModel):
+    score_percentage: int = PydanticField(ge=0, le=100)
+
+
+class DeckExamScoreRead(BaseModel):
+    best_score_percentage: int | None
+
+
 # --- Card Schemas ---
 
 

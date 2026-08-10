@@ -217,3 +217,15 @@ class DeckMatchTime(SQLModel, table=True):
     user_id: uuid.UUID = Field(foreign_key="user.id", index=True)
     deck_id: uuid.UUID = Field(foreign_key="decks.id", index=True)
     best_time_ms: int
+
+
+class DeckExamScore(SQLModel, table=True):
+    __tablename__ = "deck_exam_scores"
+    __table_args__ = (
+        UniqueConstraint("user_id", "deck_id", name="uq_user_deck_exam_score"),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID = Field(foreign_key="user.id", index=True)
+    deck_id: uuid.UUID = Field(foreign_key="decks.id", index=True)
+    best_score_percentage: int

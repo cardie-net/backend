@@ -118,3 +118,40 @@ async def clear_deck_match_time(
     if match_time:
         await db.delete(match_time)
         await db.commit()
+
+
+async def get_deck_exam_score(
+    db: AsyncSession, user_id: uuid.UUID, deck_id: uuid.UUID
+) -> models.DeckExamScore | None:
+    statement = select(models.DeckExamScore).where(
+        models.DeckExamScore.user_id == user_id,
+        models.DeckExamScore.deck_id == deck_id,
+    )
+    result = await db.execute(statement)
+    return result.scalars().first()
+
+
+async def update_deck_exam_score(
+    db: AsyncSession, user_id: uuid.UUID, deck_id: uuid.UUID, score_percentage: int
+) -> models.DeckExamScore:
+    exam_score = await get_deck_exam_score(db, user_id, deck_id)
+    if not exam_score:
+        exam_score = models.DeckExamScore(
+            user_id=user_id, deck_id=deck_id, best_score_percentage=score_percentage
+        )
+        db.add(exam_score)
+    elif score_percentage > exam_score.best_score_percentage:
+        exam_score.best_score_percentage = score_percentage
+        db.add(exam_score)
+    await db.commit()
+    await db.refresh(exam_score)
+    return exam_score
+
+
+async def clear_deck_exam_score(
+    db: AsyncSession, user_id: uuid.UUID, deck_id: uuid.UUID
+) -> None:
+    exam_score = await get_deck_exam_score(db, user_id, deck_id)
+    if exam_score:
+        await db.delete(exam_score)
+        await db.commit()

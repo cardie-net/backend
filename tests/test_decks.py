@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 from httpx import AsyncClient
 
@@ -1013,3 +1015,177 @@ async def test_deck_match_time(async_client: AsyncClient, guest_token: str):
     )
     assert res.status_code == 200
     assert res.json()["best_time_ms"] is None
+
+
+@pytest.mark.asyncio
+async def test_deck_exam_score_basic(async_client: AsyncClient, guest_token: str):
+    response = await async_client.post(
+        "/api/v1/decks",
+        json={"name": "Exam Deck", "privacy": "private"},
+        headers={"X-Test-Cookie": guest_token},
+    )
+    deck_id = response.json()["id"]
+
+    # 1. Initial GET -> None
+    res = await async_client.get(
+        f"/api/v1/decks/{deck_id}/exam-score",
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert res.status_code == 200
+    assert res.json()["best_score_percentage"] is None
+
+    # 2. POST 75% -> 75%
+    res = await async_client.post(
+        f"/api/v1/decks/{deck_id}/exam-score",
+        json={"score_percentage": 75},
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert res.status_code == 200
+    assert res.json()["best_score_percentage"] == 75
+
+    # 3. POST lower score 60% -> stays 75%
+    res = await async_client.post(
+        f"/api/v1/decks/{deck_id}/exam-score",
+        json={"score_percentage": 60},
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert res.status_code == 200
+    assert res.json()["best_score_percentage"] == 75
+
+    # 4. POST higher score 90% -> updates to 90%
+    res = await async_client.post(
+        f"/api/v1/decks/{deck_id}/exam-score",
+        json={"score_percentage": 90},
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert res.status_code == 200
+    assert res.json()["best_score_percentage"] == 90
+
+    # 5. POST equal score 90% -> stays 90%
+    res = await async_client.post(
+        f"/api/v1/decks/{deck_id}/exam-score",
+        json={"score_percentage": 90},
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert res.status_code == 200
+    assert res.json()["best_score_percentage"] == 90
+
+    # 6. DELETE -> 204
+    res = await async_client.delete(
+        f"/api/v1/decks/{deck_id}/exam-score",
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert res.status_code == 204
+
+    # 7. GET after delete -> None
+    res = await async_client.get(
+        f"/api/v1/decks/{deck_id}/exam-score",
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert res.status_code == 200
+    assert res.json()["best_score_percentage"] is None
+
+
+@pytest.mark.asyncio
+async def test_deck_exam_score_edge_cases(
+    async_client: AsyncClient, guest_token: str, guest_token2: str
+):
+    response = await async_client.post(
+        "/api/v1/decks",
+        json={"name": "Exam Edge Deck", "privacy": "private"},
+        headers={"X-Test-Cookie": guest_token},
+    )
+    deck_id = response.json()["id"]
+
+    # Boundary 0%
+    res = await async_client.post(
+        f"/api/v1/decks/{deck_id}/exam-score",
+        json={"score_percentage": 0},
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert res.status_code == 200
+    assert res.json()["best_score_percentage"] == 0
+
+    # Boundary 100%
+    res = await async_client.post(
+        f"/api/v1/decks/{deck_id}/exam-score",
+        json={"score_percentage": 100},
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert res.status_code == 200
+    assert res.json()["best_score_percentage"] == 100
+
+    # Invalid percentage < 0 -> 422
+    res = await async_client.post(
+        f"/api/v1/decks/{deck_id}/exam-score",
+        json={"score_percentage": -1},
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert res.status_code == 422
+
+    # Invalid percentage > 100 -> 422
+    res = await async_client.post(
+        f"/api/v1/decks/{deck_id}/exam-score",
+        json={"score_percentage": 101},
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert res.status_code == 422
+
+    # Non-existent deck -> 404
+    fake_deck_id = uuid.uuid4()
+    res = await async_client.get(
+        f"/api/v1/decks/{fake_deck_id}/exam-score",
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert res.status_code == 404
+
+    res = await async_client.post(
+        f"/api/v1/decks/{fake_deck_id}/exam-score",
+        json={"score_percentage": 80},
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert res.status_code == 404
+
+    res = await async_client.delete(
+        f"/api/v1/decks/{fake_deck_id}/exam-score",
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert res.status_code == 404
+
+    # Unauthenticated requests -> 401
+    async_client.cookies.clear()
+    res = await async_client.get(f"/api/v1/decks/{deck_id}/exam-score")
+    assert res.status_code == 401
+
+    res = await async_client.post(
+        f"/api/v1/decks/{deck_id}/exam-score", json={"score_percentage": 50}
+    )
+    assert res.status_code == 401
+
+    res = await async_client.delete(f"/api/v1/decks/{deck_id}/exam-score")
+    assert res.status_code == 401
+
+    # User isolation: User 2 checking deck
+    res = await async_client.get(
+        f"/api/v1/decks/{deck_id}/exam-score",
+        headers={"X-Test-Cookie": guest_token2},
+    )
+    assert res.status_code == 200
+    assert res.json()["best_score_percentage"] is None
+
+    # User 2 sets score to 50%
+    res = await async_client.post(
+        f"/api/v1/decks/{deck_id}/exam-score",
+        json={"score_percentage": 50},
+        headers={"X-Test-Cookie": guest_token2},
+    )
+    assert res.status_code == 200
+    assert res.json()["best_score_percentage"] == 50
+
+    # User 1 score remains 100%
+    res = await async_client.get(
+        f"/api/v1/decks/{deck_id}/exam-score",
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert res.status_code == 200
+    assert res.json()["best_score_percentage"] == 100
