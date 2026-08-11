@@ -229,3 +229,17 @@ class DeckExamScore(SQLModel, table=True):
     user_id: uuid.UUID = Field(foreign_key="user.id", index=True)
     deck_id: uuid.UUID = Field(foreign_key="decks.id", index=True)
     best_score_percentage: int
+
+
+class UserDailyActivity(SQLModel, table=True):
+    __tablename__ = "user_daily_activity"
+    __table_args__ = (
+        UniqueConstraint("user_id", "date", name="uq_user_daily_activity"),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID = Field(foreign_key="user.id", index=True)
+    date: str = Field(index=True)  # Format: YYYY-MM-DD
+    points: int = Field(default=0)
+    activities_count: int = Field(default=0)
+    details: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))

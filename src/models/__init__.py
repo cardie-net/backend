@@ -31,7 +31,10 @@ from .schemas import (
     SRSReviewItem,
     SRSReviewRequest,
     SRSStudyResponse,
+    UserActivityRecordRequest,
+    UserActivitySummary,
     UserCreate,
+    UserDailyActivityRead,
     UserRead,
     UserUpdate,
 )
@@ -50,6 +53,7 @@ from .tables import (
     SRSCardProgress,
     TextElement,
     User,
+    UserDailyActivity,
 )
 
 __all__ = [
@@ -88,7 +92,11 @@ __all__ = [
     "SocialLinks",
     "TextElement",
     "User",
+    "UserActivityRecordRequest",
+    "UserActivitySummary",
     "UserCreate",
+    "UserDailyActivity",
+    "UserDailyActivityRead",
     "UserProperties",
     "UserRead",
     "UserUpdate",

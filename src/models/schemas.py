@@ -213,3 +213,30 @@ class SRSStudyResponse(BaseModel):
     new_cards: list[SRSCardProgressRead]
     learning_cards: list[SRSCardProgressRead]
     review_cards: list[SRSCardProgressRead]
+
+
+# --- User Daily Activity Schemas ---
+
+
+class UserDailyActivityRead(BaseModel):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    date: str
+    points: int
+    activities_count: int
+    details: dict[str, Any] | None = None
+
+
+class UserActivityRecordRequest(BaseModel):
+    points: int = PydanticField(gt=0)
+    count: int = PydanticField(default=1, ge=1)
+    activity_type: str | None = None
+    date: str | None = None
+
+
+class UserActivitySummary(BaseModel):
+    activities: list[UserDailyActivityRead]
+    total_points: int
+    current_streak: int
+    longest_streak: int
+    total_active_days: int

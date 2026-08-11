@@ -246,3 +246,30 @@ async def get_user_items(
         db, target_user_id=user_id, requesting_user_id=user.id
     )
     return items
+
+
+@router.post("/me/activity", response_model=models.UserDailyActivityRead)
+async def record_activity(
+    req: models.UserActivityRecordRequest,
+    user: models.User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> models.UserDailyActivity:
+    """Record or increment daily activity points for current user."""
+    return await crud.record_daily_activity(
+        db,
+        user_id=user.id,
+        points=req.points,
+        count=req.count,
+        activity_type=req.activity_type,
+        date_str=req.date,
+    )
+
+
+@router.get("/me/activity", response_model=models.UserActivitySummary)
+async def get_my_activity(
+    days: int = 365,
+    user: models.User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> models.UserActivitySummary:
+    """Retrieve activity history and streak statistics for current user."""
+    return await crud.get_user_activity_history(db, user_id=user.id, days=days)

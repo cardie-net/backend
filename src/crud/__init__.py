@@ -1,3 +1,4 @@
+from .activity import get_user_activity_history, record_daily_activity
 from .card import (
     create_card_for_deck,
     delete_card,
@@ -70,4 +71,6 @@ __all__ = [
     "get_srs_counts_for_user",
     "get_srs_study_cards",
     "process_srs_reviews",
+    "record_daily_activity",
+    "get_user_activity_history",
 ]
