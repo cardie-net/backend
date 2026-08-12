@@ -51,6 +51,7 @@ from .tables import (
     FolderBase,
     OAuthAccount,
     SRSCardProgress,
+    SRSDeckActivation,
     TextElement,
     User,
     UserDailyActivity,
@@ -108,4 +109,5 @@ __all__ = [
     "SRSDeckCounts",
     "SRSStudyResponse",
     "SRSCardProgress",
+    "SRSDeckActivation",
 ]

@@ -39,16 +39,24 @@ async def test_srs_flow(async_client: AsyncClient, guest_token: str):
         assert card_resp.status_code == 200
         card_ids.append(card_resp.json()["id"])
 
-    # 3. Check counts - should be 3 new
+    # 3. Check counts - should be unactivated initially
     counts_resp = await async_client.get(
         "/api/v1/srs/counts", headers={"X-Test-Cookie": guest_token}
     )
     assert counts_resp.status_code == 200
     counts = counts_resp.json()
     assert deck_id in counts
-    assert counts[deck_id]["new_count"] == 3
-    assert counts[deck_id]["learning_count"] == 0
-    assert counts[deck_id]["review_count"] == 0
+    assert counts[deck_id]["activated"] is False
+    assert counts[deck_id]["new_count"] == 0
+
+    # 3.5. Activate SRS for deck
+    act_resp = await async_client.post(
+        f"/api/v1/decks/{deck_id}/srs/activate", headers={"X-Test-Cookie": guest_token}
+    )
+    assert act_resp.status_code == 200
+    act_data = act_resp.json()
+    assert act_data["activated"] is True
+    assert act_data["new_count"] == 3
 
     # 4. Fetch study cards
     study_resp = await async_client.get(
@@ -83,6 +91,7 @@ async def test_srs_flow(async_client: AsyncClient, guest_token: str):
         "/api/v1/srs/counts", headers={"X-Test-Cookie": guest_token}
     )
     counts2 = counts_resp2.json()[deck_id]
+    assert counts2["activated"] is True
     assert counts2["new_count"] == 0
     # Card 0 was rated "again" -> still due today, so it shows as learning
     assert counts2["learning_count"] == 1
@@ -122,11 +131,17 @@ async def test_srs_limits(async_client: AsyncClient, guest_token: str):
             headers={"X-Test-Cookie": guest_token},
         )
 
+    # Activate SRS
+    await async_client.post(
+        f"/api/v1/decks/{deck_id}/srs/activate", headers={"X-Test-Cookie": guest_token}
+    )
+
     # Check counts
     counts_resp = await async_client.get(
         "/api/v1/srs/counts", headers={"X-Test-Cookie": guest_token}
     )
     counts = counts_resp.json()[deck_id]
+    assert counts["activated"] is True
     assert counts["new_count"] == 10  # Capped at 10
 
     # Fetch study cards

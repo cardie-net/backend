@@ -7,7 +7,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth.router import current_active_user
 from ..crud.deck import get_deck
-from ..crud.srs import get_srs_counts_for_user, get_srs_study_cards, process_srs_reviews
+from ..crud.srs import (
+    activate_srs_deck,
+    get_srs_counts_for_user,
+    get_srs_study_cards,
+    process_srs_reviews,
+)
 from ..database import get_db
 from ..models import SRSDeckCounts, SRSReviewRequest, SRSStudyResponse, User
 
@@ -21,6 +26,19 @@ async def get_srs_counts(
 ):
     """Get SRS counts for all user decks."""
     return await get_srs_counts_for_user(db, user.id)
+
+
+@router.post("/decks/{deck_id}/srs/activate", response_model=SRSDeckCounts)
+async def activate_srs(
+    deck_id: uuid.UUID,
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Activate SRS for a deck."""
+    counts = await activate_srs_deck(db, user.id, deck_id)
+    if counts is None:
+        raise HTTPException(status_code=404, detail="Deck not found")
+    return counts
 
 
 @router.get("/decks/{deck_id}/srs/study", response_model=SRSStudyResponse)

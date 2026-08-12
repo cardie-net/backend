@@ -204,6 +204,7 @@ class SRSReviewRequest(BaseModel):
 
 
 class SRSDeckCounts(BaseModel):
+    activated: bool = False
     new_count: int
     learning_count: int
     review_count: int

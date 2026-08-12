@@ -10,6 +10,7 @@ from ..models import (
     Deck,
     SRSCardProgress,
     SRSCardProgressRead,
+    SRSDeckActivation,
     SRSDeckCounts,
     SRSReviewItem,
     SRSStudyResponse,
@@ -56,6 +57,70 @@ def compute_srs_schedule(
     return new_reps, new_interval, new_ef
 
 
+async def activate_srs_deck(
+    db: AsyncSession, user_id: uuid.UUID, deck_id: uuid.UUID
+) -> SRSDeckCounts | None:
+    """Activate SRS for a deck."""
+    deck_result = await db.execute(
+        select(Deck).where(Deck.id == deck_id, Deck.user_id == user_id)
+    )
+    deck = deck_result.scalar_one_or_none()
+    if not deck:
+        return None
+
+    # Record deck activation
+    activation_result = await db.execute(
+        select(SRSDeckActivation).where(
+            SRSDeckActivation.user_id == user_id,
+            SRSDeckActivation.deck_id == deck_id,
+        )
+    )
+    if not activation_result.scalar_one_or_none():
+        today_iso = date.today().isoformat()
+        db.add(
+            SRSDeckActivation(
+                user_id=user_id,
+                deck_id=deck_id,
+                activated_at=today_iso,
+            )
+        )
+
+    # Initialize SRS card progress for cards in the deck
+    cards_result = await db.execute(select(Card.id).where(Card.deck_id == deck_id))
+    card_ids = cards_result.scalars().all()
+
+    if card_ids:
+        progress_result = await db.execute(
+            select(SRSCardProgress.card_id).where(
+                SRSCardProgress.user_id == user_id,
+                SRSCardProgress.card_id.in_(card_ids),
+            )
+        )
+        existing_card_ids = set(progress_result.scalars().all())
+
+        for cid in card_ids:
+            if cid not in existing_card_ids:
+                db.add(
+                    SRSCardProgress(
+                        user_id=user_id,
+                        card_id=cid,
+                        repetitions=0,
+                        ease_factor=2.5,
+                        interval=0.0,
+                        due_date=None,
+                        last_reviewed=None,
+                    )
+                )
+
+    await db.commit()
+
+    all_counts = await get_srs_counts_for_user(db, user_id)
+    return all_counts.get(
+        deck_id,
+        SRSDeckCounts(activated=True, new_count=0, learning_count=0, review_count=0),
+    )
+
+
 async def get_srs_counts_for_user(
     db: AsyncSession, user_id: uuid.UUID
 ) -> Dict[uuid.UUID, SRSDeckCounts]:
@@ -66,27 +131,40 @@ async def get_srs_counts_for_user(
     decks_result = await db.execute(select(Deck.id).where(Deck.user_id == user_id))
     deck_ids = decks_result.scalars().all()
 
+    # Get all activated deck IDs for user
+    activations_result = await db.execute(
+        select(SRSDeckActivation.deck_id).where(SRSDeckActivation.user_id == user_id)
+    )
+    activated_deck_ids = set(activations_result.scalars().all())
+
     counts: Dict[uuid.UUID, SRSDeckCounts] = {}
 
     for deck_id in deck_ids:
-        # Get all cards in deck
         cards_result = await db.execute(select(Card.id).where(Card.deck_id == deck_id))
         card_ids = cards_result.scalars().all()
 
-        if not card_ids:
+        if card_ids:
+            progress_result = await db.execute(
+                select(SRSCardProgress).where(
+                    SRSCardProgress.user_id == user_id,
+                    SRSCardProgress.card_id.in_(card_ids),
+                )
+            )
+            progress_list = progress_result.scalars().all()
+        else:
+            progress_list = []
+
+        is_activated = (deck_id in activated_deck_ids) or (len(progress_list) > 0)
+
+        if not is_activated:
             counts[deck_id] = SRSDeckCounts(
-                new_count=0, learning_count=0, review_count=0
+                activated=False,
+                new_count=0,
+                learning_count=0,
+                review_count=0,
             )
             continue
 
-        # Get SRS progress for these cards for this user
-        progress_result = await db.execute(
-            select(SRSCardProgress).where(
-                SRSCardProgress.user_id == user_id,
-                SRSCardProgress.card_id.in_(card_ids),
-            )
-        )
-        progress_list = progress_result.scalars().all()
         progress_by_card = {p.card_id: p for p in progress_list}
 
         new_count = 0
@@ -95,7 +173,7 @@ async def get_srs_counts_for_user(
 
         for cid in card_ids:
             p = progress_by_card.get(cid)
-            if not p:
+            if not p or p.last_reviewed is None:
                 new_count += 1
             elif p.repetitions == 0 and p.due_date and p.due_date <= today:
                 learning_count += 1
@@ -107,6 +185,7 @@ async def get_srs_counts_for_user(
         review_count = min(100, review_count)
 
         counts[deck_id] = SRSDeckCounts(
+            activated=True,
             new_count=new_count,
             learning_count=learning_count,
             review_count=review_count,
@@ -118,7 +197,6 @@ async def get_srs_counts_for_user(
 async def get_srs_study_cards(
     db: AsyncSession, user_id: uuid.UUID, deck_id: uuid.UUID, today: str
 ) -> SRSStudyResponse:
-    # Get all cards in deck
     cards_result = await db.execute(select(Card.id).where(Card.deck_id == deck_id))
     card_ids = cards_result.scalars().all()
 
@@ -132,6 +210,20 @@ async def get_srs_study_cards(
         )
     )
     progress_list = progress_result.scalars().all()
+
+    activations_result = await db.execute(
+        select(SRSDeckActivation.deck_id).where(
+            SRSDeckActivation.user_id == user_id,
+            SRSDeckActivation.deck_id == deck_id,
+        )
+    )
+    is_activated = (activations_result.scalar_one_or_none() is not None) or (
+        len(progress_list) > 0
+    )
+
+    if not is_activated:
+        return SRSStudyResponse(new_cards=[], learning_cards=[], review_cards=[])
+
     progress_by_card = {p.card_id: p for p in progress_list}
 
     new_cards = []
@@ -140,16 +232,16 @@ async def get_srs_study_cards(
 
     for cid in card_ids:
         p = progress_by_card.get(cid)
-        if not p:
+        if not p or p.last_reviewed is None:
             if len(new_cards) < 10:
                 new_cards.append(
                     SRSCardProgressRead(
                         card_id=cid,
-                        repetitions=0,
-                        ease_factor=2.5,
-                        interval=0.0,
-                        due_date=None,
-                        last_reviewed=None,
+                        repetitions=p.repetitions if p else 0,
+                        ease_factor=p.ease_factor if p else 2.5,
+                        interval=p.interval if p else 0.0,
+                        due_date=p.due_date if p else None,
+                        last_reviewed=p.last_reviewed if p else None,
                     )
                 )
         elif p.repetitions == 0 and p.due_date and p.due_date <= today:
@@ -190,6 +282,22 @@ async def process_srs_reviews(
     reviews: list[SRSReviewItem],
     today: str,
 ) -> None:
+    # Ensure deck activation is recorded
+    activation_result = await db.execute(
+        select(SRSDeckActivation).where(
+            SRSDeckActivation.user_id == user_id,
+            SRSDeckActivation.deck_id == deck_id,
+        )
+    )
+    if not activation_result.scalar_one_or_none():
+        db.add(
+            SRSDeckActivation(
+                user_id=user_id,
+                deck_id=deck_id,
+                activated_at=today,
+            )
+        )
+
     # Get all cards in deck to validate
     cards_result = await db.execute(select(Card.id).where(Card.deck_id == deck_id))
     valid_card_ids = set(cards_result.scalars().all())

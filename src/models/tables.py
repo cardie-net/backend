@@ -199,6 +199,18 @@ class SRSCardProgress(SQLModel, table=True):
     last_reviewed: str | None = Field(default=None)
 
 
+class SRSDeckActivation(SQLModel, table=True):
+    __tablename__ = "srs_deck_activations"
+    __table_args__ = (
+        UniqueConstraint("user_id", "deck_id", name="uq_user_deck_srs_activation"),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID = Field(foreign_key="user.id", index=True)
+    deck_id: uuid.UUID = Field(foreign_key="decks.id", index=True)
+    activated_at: str | None = Field(default=None)
+
+
 Deck.cards_count = column_property(
     select(func.count(Card.id))
     .where(Card.deck_id == Deck.id)
