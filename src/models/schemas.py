@@ -22,6 +22,7 @@ class UserPreferences(BaseModel):
     language: str | None = None
     themeConfig: dict[str, Any] | None = None
     learning_multiple_choice: bool | None = None
+    overview_shuffle: bool | None = None
 
 
 class UserRead(BaseModel):
