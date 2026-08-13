@@ -21,6 +21,7 @@ from .tables import CardBase, CardElement, DeckBase, FolderBase
 class UserPreferences(BaseModel):
     language: str | None = None
     themeConfig: dict[str, Any] | None = None
+    learning_multiple_choice: bool | None = None
 
 
 class UserRead(BaseModel):
