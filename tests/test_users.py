@@ -155,9 +155,9 @@ async def test_username_auto_generation_short_email_padding(async_client: AsyncC
 
 
 @pytest.mark.asyncio
-async def test_patch_user(async_client: AsyncClient, guest_token1: str):
-    # Patch username and display_name using guest token
-    token = guest_token1
+async def test_patch_user(async_client: AsyncClient, user_token: str):
+    # Patch username and display_name using normal user token
+    token = user_token
     response = await async_client.patch(
         "/api/v1/users/me",
         headers={"X-Test-Cookie": token},
@@ -167,6 +167,25 @@ async def test_patch_user(async_client: AsyncClient, guest_token1: str):
     data = response.json()
     assert data["username"] == "newusername"
     assert data["display_name"] == "New Display Name"
+
+
+@pytest.mark.asyncio
+async def test_patch_user_guest_forbidden(async_client: AsyncClient, guest_token1: str):
+    # Test username
+    response = await async_client.patch(
+        "/api/v1/users/me",
+        headers={"X-Test-Cookie": guest_token1},
+        json={"username": "newusername"},
+    )
+    assert response.status_code == 403
+
+    # Test display name
+    response = await async_client.patch(
+        "/api/v1/users/me",
+        headers={"X-Test-Cookie": guest_token1},
+        json={"display_name": "New Display Name"},
+    )
+    assert response.status_code == 403
 
 
 @pytest.mark.asyncio
@@ -229,7 +248,7 @@ from unittest.mock import patch
 
 
 @pytest.mark.asyncio
-async def test_upload_avatar(async_client: AsyncClient, guest_token1: str):
+async def test_upload_avatar(async_client: AsyncClient, user_token: str):
     # Create a dummy image
     import io
 
@@ -248,13 +267,47 @@ async def test_upload_avatar(async_client: AsyncClient, guest_token1: str):
     ):
         response = await async_client.post(
             "/api/v1/users/me/avatar",
-            headers={"X-Test-Cookie": guest_token1},
+            headers={"X-Test-Cookie": user_token},
             files=files,
         )
 
     assert response.status_code == 200
     data = response.json()
     assert data["avatar_url"] == "http://test-url/avatar.webp"
+
+
+@pytest.mark.asyncio
+async def test_upload_avatar_guest_forbidden(
+    async_client: AsyncClient, guest_token1: str
+):
+    import io
+
+    from PIL import Image
+
+    img = Image.new("RGB", (10, 10), color="red")
+    img_byte_arr = io.BytesIO()
+    img.save(img_byte_arr, format="JPEG")
+    img_bytes = img_byte_arr.getvalue()
+
+    files = {"file": ("test.jpg", img_bytes, "image/jpeg")}
+
+    response = await async_client.post(
+        "/api/v1/users/me/avatar",
+        headers={"X-Test-Cookie": guest_token1},
+        files=files,
+    )
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_remove_avatar_guest_forbidden(
+    async_client: AsyncClient, guest_token1: str
+):
+    response = await async_client.delete(
+        "/api/v1/users/me/avatar",
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    assert response.status_code == 403
 
 
 @pytest.mark.asyncio

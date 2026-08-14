@@ -55,6 +55,13 @@ async def update_current_user(
     """Update properties of the current user."""
     update_data = user_update.model_dump(exclude_unset=True)
 
+    if user.is_guest:
+        if "username" in update_data or "display_name" in update_data:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Guest users cannot change their username or display name",
+            )
+
     bio = update_data.pop("bio", None)
     social_links = update_data.pop("social_links", None)
     preferences = update_data.pop("preferences", None)
@@ -114,6 +121,12 @@ async def upload_avatar(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Upload and set an avatar for the current user."""
+    if user.is_guest:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Guest users cannot upload avatars",
+        )
+
     if not file.content_type.startswith("image/"):
         raise fastapi.HTTPException(status_code=400, detail="File must be an image")
 
@@ -153,6 +166,12 @@ async def remove_avatar(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Remove the avatar of the current user."""
+    if user.is_guest:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Guest users cannot remove avatars",
+        )
+
     if user.avatar_url:
         old_object_name = extract_object_name_from_url(user.avatar_url)
         if old_object_name:

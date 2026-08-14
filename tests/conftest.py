@@ -81,6 +81,37 @@ async def guest_token2(async_client: AsyncClient) -> str:
     return response.cookies.get("cardie_session")
 
 
+@pytest.fixture
+async def user_token(async_client: AsyncClient, mock_send_email) -> str:
+    await async_client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "normaluser@example.com",
+            "password": "supersecretpassword",
+            "is_guest": False,
+        },
+    )
+
+    # Extract token and verify
+    import re
+
+    content = mock_send_email.call_args[0][2]
+    match = re.search(r"code: (\w+)", content)
+    captured_token = match.group(1) if match else None
+
+    await async_client.post("/api/v1/auth/verify", json={"token": captured_token})
+
+    login_response = await async_client.post(
+        "/api/v1/auth/jwt/login",
+        data={
+            "username": "normaluser@example.com",
+            "password": "supersecretpassword",
+        },
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    return login_response.cookies.get("cardie_session")
+
+
 def extract_email_token(mock_send_email_call) -> str:
     content = mock_send_email_call.call_args[0][2]
     match = re.search(r"code: (\w+)", content)
