@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timezone
 from typing import Sequence
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -106,6 +107,7 @@ async def update_deck(
             flag_modified(db_deck, "properties")
         else:
             setattr(db_deck, key, value)
+    db_deck.updated_at = datetime.now(timezone.utc)
     db.add(db_deck)
     await db.commit()
     await db.refresh(db_deck)

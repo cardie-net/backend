@@ -1326,3 +1326,31 @@ async def test_export_deck_endpoint(
         headers={"X-Test-Cookie": guest_token2},
     )
     assert exp_pub.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_deck_timestamps(async_client: AsyncClient, guest_token: str):
+    # 1. Create deck and check created_at and updated_at
+    create_res = await async_client.post(
+        "/api/v1/decks",
+        json={"name": "Timestamp Deck", "slug": "timestamp-deck"},
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert create_res.status_code == 200
+    deck_data = create_res.json()
+    assert "created_at" in deck_data
+    assert deck_data["created_at"] is not None
+    assert "updated_at" in deck_data
+    assert deck_data["updated_at"] is not None
+    deck_id = deck_data["id"]
+
+    # 2. Update deck name and check updated_at is still present and valid
+    update_res = await async_client.patch(
+        f"/api/v1/decks/{deck_id}",
+        json={"name": "Updated Timestamp Deck"},
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert update_res.status_code == 200
+    updated_data = update_res.json()
+    assert updated_data["created_at"] is not None
+    assert updated_data["updated_at"] is not None

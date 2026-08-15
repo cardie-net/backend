@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import uuid
+from datetime import datetime, timezone
 
 import fastapi
 import sqlalchemy.exc
@@ -403,6 +404,9 @@ async def transpose_deck(
     for card in cards:
         card.front, card.back = card.back, card.front
         db.add(card)
+
+    db_deck.updated_at = datetime.now(timezone.utc)
+    db.add(db_deck)
 
     await db.commit()
 

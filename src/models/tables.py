@@ -3,11 +3,38 @@ from datetime import datetime, timezone
 from typing import Any, Literal, Optional
 
 from pydantic import field_validator
-from sqlalchemy import JSON, Column, DateTime, UniqueConstraint, func, select, text
+from sqlalchemy import (
+    JSON,
+    Column,
+    DateTime,
+    TypeDecorator,
+    UniqueConstraint,
+    func,
+    select,
+    text,
+)
 from sqlalchemy.orm import column_property
 from sqlmodel import Field, Relationship, SQLModel
 
 from .common import PrivacyLevel, validate_slug
+
+
+class UTCDateTime(TypeDecorator):
+    """DateTime type that guarantees timezone-aware UTC datetime values."""
+
+    impl = DateTime(timezone=True)
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is not None and value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value
+
+    def process_result_value(self, value, dialect):
+        if value is not None and value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value
+
 
 # --- Card Element Types ---
 
@@ -62,7 +89,7 @@ class User(SQLModel, table=True):
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
         sa_column=Column(
-            DateTime(timezone=True),
+            UTCDateTime,
             nullable=False,
             default=lambda: datetime.now(timezone.utc),
         ),
@@ -70,7 +97,7 @@ class User(SQLModel, table=True):
     last_active_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
         sa_column=Column(
-            DateTime(timezone=True),
+            UTCDateTime,
             nullable=False,
             default=lambda: datetime.now(timezone.utc),
         ),
@@ -172,6 +199,22 @@ class Deck(DeckBase, table=True):
 
     id: uuid.UUID | None = Field(default_factory=uuid.uuid4, primary_key=True)
     user_id: uuid.UUID | None = Field(default=None, foreign_key="user.id")
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(
+            UTCDateTime,
+            nullable=False,
+            default=lambda: datetime.now(timezone.utc),
+        ),
+    )
+    updated_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(
+            UTCDateTime,
+            nullable=False,
+            default=lambda: datetime.now(timezone.utc),
+        ),
+    )
 
     owner: Optional["User"] = Relationship(back_populates="decks")
     folder: Optional["Folder"] = Relationship(back_populates="decks")

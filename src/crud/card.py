@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import func, select
@@ -39,6 +40,12 @@ async def create_card_for_deck(
     card_dict["order"] = next_order
     db_card = models.Card(**card_dict, deck_id=deck_id)
     db.add(db_card)
+
+    deck = await db.get(models.Deck, deck_id)
+    if deck:
+        deck.updated_at = datetime.now(timezone.utc)
+        db.add(deck)
+
     await db.commit()
     await db.refresh(db_card)
     return db_card
@@ -66,6 +73,12 @@ async def create_cards_batch_for_deck(
         db_cards.append(db_card)
 
     db.add_all(db_cards)
+
+    deck = await db.get(models.Deck, deck_id)
+    if deck:
+        deck.updated_at = datetime.now(timezone.utc)
+        db.add(deck)
+
     await db.commit()
     for db_card in db_cards:
         await db.refresh(db_card)
@@ -81,6 +94,13 @@ async def update_card(
         setattr(db_card, key, value)
 
     db.add(db_card)
+
+    if db_card.deck_id:
+        deck = await db.get(models.Deck, db_card.deck_id)
+        if deck:
+            deck.updated_at = datetime.now(timezone.utc)
+            db.add(deck)
+
     await db.commit()
     await db.refresh(db_card)
     return db_card
@@ -88,6 +108,12 @@ async def update_card(
 
 async def delete_card(db: AsyncSession, db_card: models.Card) -> None:
     """Delete a specific card."""
+    if db_card.deck_id:
+        deck = await db.get(models.Deck, db_card.deck_id)
+        if deck:
+            deck.updated_at = datetime.now(timezone.utc)
+            db.add(deck)
+
     await db.delete(db_card)
     await db.commit()
 
@@ -104,5 +130,10 @@ async def reorder_cards(
         if card_id in cards:
             cards[card_id].order = order
             db.add(cards[card_id])
+
+    deck = await db.get(models.Deck, deck_id)
+    if deck:
+        deck.updated_at = datetime.now(timezone.utc)
+        db.add(deck)
 
     await db.commit()
