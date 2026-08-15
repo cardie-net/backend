@@ -11,6 +11,7 @@ from .. import crud, models
 from ..auth.router import current_active_user
 from ..config import settings
 from ..database import get_db
+from ..services import import_export_service
 from ..services.image_service import collect_image_urls, optimize_image
 from ..services.s3_service import (
     CARD_IMAGE_PREFIX,
@@ -48,6 +49,38 @@ async def create_deck(
 
     try:
         return await crud.create_deck_for_user(db=db, deck=deck, user_id=user.id)
+    except sqlalchemy.exc.IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=400, detail="Deck with this slug already exists"
+        ) from exc
+
+
+@router.post("/import", response_model=models.DeckRead, status_code=201)
+async def import_deck(
+    deck_import: models.DeckImportRequest,
+    user: models.User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> models.DeckRead:
+    """Create a new deck with imported cards in a single atomic transaction."""
+    if deck_import.folder_id is not None:
+        folder = await crud.get_folder(db, folder_id=deck_import.folder_id)
+        if not folder:
+            raise HTTPException(status_code=404, detail="Folder not found")
+        if folder.user_id != user.id:
+            raise HTTPException(status_code=403, detail="Not enough permissions")
+
+    if deck_import.slug and await is_slug_taken(
+        db, user_id=user.id, slug=deck_import.slug
+    ):
+        raise HTTPException(
+            status_code=400, detail="Deck with this slug already exists"
+        )
+
+    try:
+        return await crud.create_deck_with_cards(
+            db=db, deck_import=deck_import, user_id=user.id
+        )
     except sqlalchemy.exc.IntegrityError as exc:
         await db.rollback()
         raise HTTPException(
@@ -162,6 +195,63 @@ async def get_deck(
     if db_deck.user_id != user.id and db_deck.privacy == models.PrivacyLevel.PRIVATE:
         raise HTTPException(status_code=403, detail="Not enough permissions")
     return db_deck
+
+
+@router.get("/{deck_id}/export")
+async def export_deck(
+    deck_id: uuid.UUID,
+    format: str = "text",
+    delimiter: import_export_service.DelimiterKind = "tab",
+    custom_delimiter: str | None = None,
+    record_separator: import_export_service.RecordSeparatorKind = "newline",
+    custom_record_separator: str | None = None,
+    user: models.User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> fastapi.Response:
+    """Export cards in the deck to formatted text."""
+    db_deck = await crud.get_deck(db, deck_id=deck_id)
+    if not db_deck:
+        raise HTTPException(status_code=404, detail="Deck not found")
+    if db_deck.user_id != user.id and db_deck.privacy == models.PrivacyLevel.PRIVATE:
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+
+    if delimiter == "custom" and not import_export_service.is_custom_separator_valid(
+        custom_delimiter
+    ):
+        raise HTTPException(
+            status_code=400, detail="Custom delimiter must be non-empty"
+        )
+    if (
+        record_separator == "custom"
+        and not import_export_service.is_custom_separator_valid(custom_record_separator)
+    ):
+        raise HTTPException(
+            status_code=400, detail="Custom record separator must be non-empty"
+        )
+
+    cards = await crud.get_cards_for_deck(db, deck_id=deck_id)
+    cards_data = [
+        (
+            import_export_service.extract_card_text(c.front),
+            import_export_service.extract_card_text(c.back),
+        )
+        for c in cards
+    ]
+
+    content = import_export_service.serialize_text_export(
+        cards_data,
+        delim_kind=delimiter,
+        sep_kind=record_separator,
+        custom_delim=custom_delimiter,
+        custom_sep=custom_record_separator,
+    )
+
+    filename = f"{db_deck.slug or db_deck.id}.txt"
+    return fastapi.Response(
+        content=content,
+        media_type="text/plain; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.delete("/{deck_id}", status_code=204)

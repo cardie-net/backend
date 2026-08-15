@@ -44,6 +44,24 @@ async def create_card(
     return await crud.create_card_for_deck(db=db, card=card, deck_id=deck_id)
 
 
+@router.post("/batch", response_model=list[models.CardRead])
+async def create_cards_batch(
+    deck_id: uuid.UUID,
+    batch: models.CardBatchCreate,
+    user: models.User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[models.CardRead]:
+    """Create multiple cards within a specific deck in a single request."""
+    deck = await crud.get_deck(db, deck_id=deck_id)
+    if not deck:
+        raise HTTPException(status_code=404, detail="Deck not found")
+    if deck.user_id != user.id:
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+    return await crud.create_cards_batch_for_deck(
+        db=db, cards=batch.cards, deck_id=deck_id
+    )
+
+
 @router.delete("/{card_id}", status_code=204)
 async def delete_card(
     deck_id: uuid.UUID,

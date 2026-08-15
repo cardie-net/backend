@@ -44,6 +44,34 @@ async def create_card_for_deck(
     return db_card
 
 
+async def create_cards_batch_for_deck(
+    db: AsyncSession, cards: list[models.CardCreate], deck_id: uuid.UUID
+) -> list[models.Card]:
+    """Create multiple cards in a single batch and append them to the deck."""
+    if not cards:
+        return []
+
+    statement = select(func.max(models.Card.order)).where(
+        models.Card.deck_id == deck_id
+    )
+    result = await db.execute(statement)
+    max_order = result.scalar()
+    start_order = (max_order + 1) if max_order is not None else 0
+
+    db_cards: list[models.Card] = []
+    for i, card in enumerate(cards):
+        card_dict = card.model_dump()
+        card_dict["order"] = start_order + i
+        db_card = models.Card(**card_dict, deck_id=deck_id)
+        db_cards.append(db_card)
+
+    db.add_all(db_cards)
+    await db.commit()
+    for db_card in db_cards:
+        await db.refresh(db_card)
+    return db_cards
+
+
 async def update_card(
     db: AsyncSession, db_card: models.Card, card_update: models.CardUpdate
 ) -> models.Card:

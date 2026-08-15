@@ -1,6 +1,7 @@
 from .activity import get_user_activity_history, record_daily_activity
 from .card import (
     create_card_for_deck,
+    create_cards_batch_for_deck,
     delete_card,
     get_card,
     get_cards_for_deck,
@@ -11,6 +12,7 @@ from .deck import (
     clear_deck_exam_score,
     clear_deck_match_time,
     create_deck_for_user,
+    create_deck_with_cards,
     delete_deck,
     get_deck,
     get_deck_by_username_and_slug,
@@ -41,12 +43,14 @@ from .srs import (
 
 __all__ = [
     "create_card_for_deck",
+    "create_cards_batch_for_deck",
     "get_cards_for_deck",
     "get_card",
     "update_card",
     "delete_card",
     "reorder_cards",
     "create_deck_for_user",
+    "create_deck_with_cards",
     "get_deck",
     "get_decks_for_user",
     "create_folder_for_user",

@@ -39,6 +39,35 @@ async def create_deck_for_user(
     return db_deck
 
 
+async def create_deck_with_cards(
+    db: AsyncSession,
+    deck_import: models.DeckImportRequest,
+    user_id: uuid.UUID,
+) -> models.Deck:
+    """Create a new deck and all its initial cards in a single transaction."""
+    deck_data = deck_import.model_dump(exclude={"cards"})
+    if not deck_data.get("slug"):
+        deck_data["slug"] = await generate_unique_slug(
+            db, models.Deck, user_id, deck_import.name
+        )
+
+    db_deck = models.Deck(**deck_data, user_id=user_id)
+    db.add(db_deck)
+    await db.flush()
+
+    if deck_import.cards:
+        db_cards = []
+        for i, c in enumerate(deck_import.cards):
+            card_dict = c.model_dump()
+            card_dict["order"] = i
+            db_cards.append(models.Card(**card_dict, deck_id=db_deck.id))
+        db.add_all(db_cards)
+
+    await db.commit()
+    await db.refresh(db_deck)
+    return db_deck
+
+
 async def get_deck(db: AsyncSession, deck_id: uuid.UUID) -> models.Deck | None:
     """Retrieve a specific deck by ID."""
     return await db.get(models.Deck, deck_id)

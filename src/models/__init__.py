@@ -8,6 +8,7 @@ from .common import (
     validate_slug,
 )
 from .schemas import (
+    CardBatchCreate,
     CardCreate,
     CardProgressRead,
     CardProgressSyncRequest,
@@ -18,6 +19,7 @@ from .schemas import (
     DeckCreate,
     DeckExamScoreRead,
     DeckExamScoreUpdate,
+    DeckImportRequest,
     DeckMatchTimeRead,
     DeckMatchTimeUpdate,
     DeckRead,
@@ -61,6 +63,7 @@ __all__ = [
     "ALLOWED_SOCIAL_PLATFORMS",
     "Card",
     "CardBase",
+    "CardBatchCreate",
     "CardCreate",
     "CardElement",
     "CardRead",
@@ -76,6 +79,7 @@ __all__ = [
     "DeckExamScore",
     "DeckExamScoreRead",
     "DeckExamScoreUpdate",
+    "DeckImportRequest",
     "DeckRead",
     "DeckUpdate",
     "DeckMatchTime",

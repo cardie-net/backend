@@ -1189,3 +1189,140 @@ async def test_deck_exam_score_edge_cases(
     )
     assert res.status_code == 200
     assert res.json()["best_score_percentage"] == 100
+
+
+@pytest.mark.asyncio
+async def test_import_deck_success(async_client: AsyncClient, guest_token: str):
+    import_payload = {
+        "name": "Imported Deck Test",
+        "privacy": "private",
+        "cards": [
+            {
+                "front": [{"type": "text", "content": f"Q{i}"}],
+                "back": [{"type": "text", "content": f"A{i}"}],
+            }
+            for i in range(4)
+        ],
+    }
+    res = await async_client.post(
+        "/api/v1/decks/import",
+        json=import_payload,
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert res.status_code == 201
+    deck_data = res.json()
+    assert deck_data["name"] == "Imported Deck Test"
+    assert deck_data["cards_count"] == 4
+    deck_id = deck_data["id"]
+
+    cards_res = await async_client.get(
+        f"/api/v1/decks/{deck_id}/cards",
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert cards_res.status_code == 200
+    cards = cards_res.json()
+    assert len(cards) == 4
+    for i, c in enumerate(cards):
+        assert c["order"] == i
+        assert c["front"][0]["content"] == f"Q{i}"
+        assert c["back"][0]["content"] == f"A{i}"
+
+
+@pytest.mark.asyncio
+async def test_import_deck_with_folder(
+    async_client: AsyncClient, guest_token: str, guest_token2: str
+):
+    # 1. Create a folder for user 1
+    f_res = await async_client.post(
+        "/api/v1/folders",
+        json={"name": "Import Folder"},
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert f_res.status_code == 200
+    folder_id = f_res.json()["id"]
+
+    # 2. User 1 imports deck into folder
+    res = await async_client.post(
+        "/api/v1/decks/import",
+        json={
+            "name": "Folder Deck",
+            "folder_id": folder_id,
+            "cards": [
+                {
+                    "front": [{"type": "text", "content": "Q"}],
+                    "back": [{"type": "text", "content": "A"}],
+                }
+            ],
+        },
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert res.status_code == 201
+    assert res.json()["folder_id"] == folder_id
+
+    # 3. User 2 tries to import into User 1's folder -> 403
+    res2 = await async_client.post(
+        "/api/v1/decks/import",
+        json={
+            "name": "Intruder Deck",
+            "folder_id": folder_id,
+            "cards": [],
+        },
+        headers={"X-Test-Cookie": guest_token2},
+    )
+    assert res2.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_export_deck_endpoint(
+    async_client: AsyncClient, guest_token: str, guest_token2: str
+):
+    # 1. Import a deck
+    import_payload = {
+        "name": "Exportable Deck",
+        "privacy": "private",
+        "cards": [
+            {
+                "front": [{"type": "text", "content": "Front 1"}],
+                "back": [{"type": "text", "content": "Back 1"}],
+            },
+            {
+                "front": [{"type": "text", "content": "Front 2"}],
+                "back": [{"type": "text", "content": "Back 2"}],
+            },
+        ],
+    }
+    create_res = await async_client.post(
+        "/api/v1/decks/import",
+        json=import_payload,
+        headers={"X-Test-Cookie": guest_token},
+    )
+    deck_id = create_res.json()["id"]
+
+    # 2. Export deck as tab/newline text
+    exp_res = await async_client.get(
+        f"/api/v1/decks/{deck_id}/export?delimiter=tab&record_separator=newline",
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert exp_res.status_code == 200
+    assert "attachment" in exp_res.headers.get("Content-Disposition", "")
+    assert "Front 1\tBack 1\nFront 2\tBack 2" in exp_res.text
+
+    # 3. User 2 exporting User 1's private deck -> 403
+    exp_unauth = await async_client.get(
+        f"/api/v1/decks/{deck_id}/export",
+        headers={"X-Test-Cookie": guest_token2},
+    )
+    assert exp_unauth.status_code == 403
+
+    # 4. Make deck public and test User 2 export -> 200
+    patch_res = await async_client.patch(
+        f"/api/v1/decks/{deck_id}",
+        json={"privacy": "public"},
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert patch_res.status_code == 200
+    exp_pub = await async_client.get(
+        f"/api/v1/decks/{deck_id}/export",
+        headers={"X-Test-Cookie": guest_token2},
+    )
+    assert exp_pub.status_code == 200

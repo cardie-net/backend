@@ -582,3 +582,95 @@ async def test_delete_card_cleans_up_image_s3(
         )
     assert del_resp.status_code == 204
     mock_del.assert_called_once_with([url], f"card-images/{guest_user_id}/")
+
+
+@pytest.mark.asyncio
+async def test_create_cards_batch_success(
+    async_client: AsyncClient, guest_token1: str, private_deck_id: int
+):
+    cards_payload = {
+        "cards": [
+            {
+                "front": [{"type": "text", "content": f"Front {i}"}],
+                "back": [{"type": "text", "content": f"Back {i}"}],
+            }
+            for i in range(5)
+        ]
+    }
+    resp = await async_client.post(
+        f"/api/v1/decks/{private_deck_id}/cards/batch",
+        json=cards_payload,
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 5
+    for i, c in enumerate(data):
+        assert c["order"] == i
+        assert c["front"][0]["content"] == f"Front {i}"
+        assert c["back"][0]["content"] == f"Back {i}"
+
+    # Batch append more cards and verify order continuation
+    more_cards = {
+        "cards": [
+            {
+                "front": [{"type": "text", "content": "More Front 1"}],
+                "back": [{"type": "text", "content": "More Back 1"}],
+            },
+            {
+                "front": [{"type": "text", "content": "More Front 2"}],
+                "back": [{"type": "text", "content": "More Back 2"}],
+            },
+        ]
+    }
+    resp2 = await async_client.post(
+        f"/api/v1/decks/{private_deck_id}/cards/batch",
+        json=more_cards,
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    assert resp2.status_code == 200
+    data2 = resp2.json()
+    assert len(data2) == 2
+    assert data2[0]["order"] == 5
+    assert data2[1]["order"] == 6
+
+
+@pytest.mark.asyncio
+async def test_create_cards_batch_unauthorized(
+    async_client: AsyncClient, guest_token2: str, private_deck_id: int
+):
+    resp = await async_client.post(
+        f"/api/v1/decks/{private_deck_id}/cards/batch",
+        json={
+            "cards": [
+                {
+                    "front": [{"type": "text", "content": "F"}],
+                    "back": [{"type": "text", "content": "B"}],
+                }
+            ]
+        },
+        headers={"X-Test-Cookie": guest_token2},
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_create_cards_batch_not_found(
+    async_client: AsyncClient, guest_token1: str
+):
+    import uuid
+
+    fake_id = uuid.uuid4()
+    resp = await async_client.post(
+        f"/api/v1/decks/{fake_id}/cards/batch",
+        json={
+            "cards": [
+                {
+                    "front": [{"type": "text", "content": "F"}],
+                    "back": [{"type": "text", "content": "B"}],
+                }
+            ]
+        },
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    assert resp.status_code == 404

@@ -156,6 +156,24 @@ class CardCreate(CardBase):
     pass
 
 
+class CardBatchCreate(BaseModel):
+    cards: list[CardCreate] = PydanticField(min_length=1, max_length=5000)
+
+
+class DeckImportRequest(BaseModel):
+    name: str = PydanticField(min_length=1, max_length=80)
+    slug: str | None = PydanticField(default=None, max_length=80)
+    privacy: PrivacyLevel = PrivacyLevel.PRIVATE
+    folder_id: uuid.UUID | None = None
+    properties: ItemProperties | None = None
+    cards: list[CardCreate] = PydanticField(default_factory=list, max_length=5000)
+
+    @field_validator("slug")
+    @classmethod
+    def validate_slug_import(cls, v: str | None) -> str | None:
+        return validate_optional_slug(v)
+
+
 class CardUpdate(BaseModel):
     front: list[CardElement] | None = None
     back: list[CardElement] | None = None
