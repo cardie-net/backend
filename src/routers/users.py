@@ -207,7 +207,7 @@ async def get_user_deck_by_slug(
     deck_slug: str,
     user: models.User | None = Depends(get_optional_current_user),
     db: AsyncSession = Depends(get_db),
-) -> models.Deck:
+) -> models.DeckRead:
     """Retrieve a user's deck by slug."""
     db_deck = await crud.get_deck_by_username_and_slug(
         db, username=username, slug=deck_slug
@@ -224,7 +224,17 @@ async def get_user_deck_by_slug(
     ):
         raise HTTPException(status_code=403, detail="Not enough permissions")
 
-    return db_deck
+    is_starred = False
+    if current_user_id:
+        starred_stmt = select(models.DeckStar).where(
+            models.DeckStar.user_id == current_user_id,
+            models.DeckStar.deck_id == db_deck.id,
+        )
+        is_starred = bool((await db.execute(starred_stmt)).scalars().first())
+
+    deck_read = models.DeckRead.model_validate(db_deck)
+    deck_read.is_starred = is_starred
+    return deck_read
 
 
 @router.get(
@@ -235,7 +245,7 @@ async def get_user_folder_by_slug(
     folder_slug: str,
     user: models.User | None = Depends(get_optional_current_user),
     db: AsyncSession = Depends(get_db),
-) -> models.Folder:
+) -> models.FolderRead:
     """Retrieve a user's folder by slug."""
     db_folder = await crud.get_folder_by_username_and_slug(
         db, username=username, slug=folder_slug
@@ -251,7 +261,17 @@ async def get_user_folder_by_slug(
     ):
         raise HTTPException(status_code=403, detail="Not enough permissions")
 
-    return db_folder
+    is_starred = False
+    if current_user_id:
+        starred_stmt = select(models.FolderStar).where(
+            models.FolderStar.user_id == current_user_id,
+            models.FolderStar.folder_id == db_folder.id,
+        )
+        is_starred = bool((await db.execute(starred_stmt)).scalars().first())
+
+    folder_read = models.FolderRead.model_validate(db_folder)
+    folder_read.is_starred = is_starred
+    return folder_read
 
 
 @router.get(

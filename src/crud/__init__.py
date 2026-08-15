@@ -8,6 +8,16 @@ from .card import (
     reorder_cards,
     update_card,
 )
+from .community import (
+    calculate_fuzzy_match_score,
+    get_community_items,
+    get_user_favorite_items,
+    get_user_starred_ids,
+    star_deck,
+    star_folder,
+    unstar_deck,
+    unstar_folder,
+)
 from .deck import (
     clear_deck_exam_score,
     clear_deck_match_time,
@@ -79,4 +89,12 @@ __all__ = [
     "process_srs_reviews",
     "record_daily_activity",
     "get_user_activity_history",
+    "get_community_items",
+    "get_user_favorite_items",
+    "calculate_fuzzy_match_score",
+    "star_deck",
+    "unstar_deck",
+    "star_folder",
+    "unstar_folder",
+    "get_user_starred_ids",
 ]

@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel
 from pydantic import Field as PydanticField
@@ -94,6 +94,11 @@ class FolderRead(FolderBase):
     user_id: uuid.UUID
     properties: ItemProperties | None = None
     type: Literal["folder"]
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    stars_count: int = 0
+    decks_count: int = 0
+    is_starred: bool = False
 
 
 class FolderWithContents(FolderRead):
@@ -134,6 +139,8 @@ class DeckRead(DeckBase):
     properties: ItemProperties | None = None
     type: Literal["deck"]
     cards_count: int = 0
+    stars_count: int = 0
+    is_starred: bool = False
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -266,3 +273,64 @@ class UserActivitySummary(BaseModel):
     current_streak: int
     longest_streak: int
     total_active_days: int
+
+
+# --- Community & Star Schemas ---
+
+
+class ItemOwner(BaseModel):
+    id: uuid.UUID
+    username: str
+    display_name: str
+    avatar_url: str | None = None
+
+
+class CommunityDeckRead(DeckBase):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    folder_id: uuid.UUID | None = None
+    properties: ItemProperties | None = None
+    type: Literal["deck"] = "deck"
+    cards_count: int = 0
+    stars_count: int = 0
+    is_starred: bool = False
+    created_at: datetime
+    updated_at: datetime
+    owner: ItemOwner
+
+
+class CommunityFolderRead(FolderBase):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    properties: ItemProperties | None = None
+    type: Literal["folder"] = "folder"
+    decks_count: int = 0
+    stars_count: int = 0
+    is_starred: bool = False
+    created_at: datetime
+    updated_at: datetime
+    owner: ItemOwner
+
+
+CommunityItem = Annotated[
+    CommunityDeckRead | CommunityFolderRead, PydanticField(discriminator="type")
+]
+
+
+class CommunityResponse(BaseModel):
+    items: list[CommunityItem]
+    total: int
+    page: int
+    limit: int
+    total_pages: int
+    has_more: bool
+
+
+class StarResponse(BaseModel):
+    starred: bool
+    stars_count: int
+
+
+class UserStarredResponse(BaseModel):
+    deck_ids: list[uuid.UUID]
+    folder_ids: list[uuid.UUID]

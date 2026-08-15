@@ -250,3 +250,36 @@ async def delete_folder(
         )
 
     return None
+
+
+@router.post("/{folder_id}/star", response_model=models.StarResponse)
+async def star_folder(
+    folder_id: uuid.UUID,
+    user: models.User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> models.StarResponse:
+    """Star a folder."""
+    try:
+        is_starred, stars_count = await crud.star_folder(
+            db=db, user_id=user.id, folder_id=folder_id
+        )
+        return models.StarResponse(starred=is_starred, stars_count=stars_count)
+    except ValueError as e:
+        status_code = 400 if "Cannot star" in str(e) else 404
+        raise HTTPException(status_code=status_code, detail=str(e))
+
+
+@router.delete("/{folder_id}/star", response_model=models.StarResponse)
+async def unstar_folder(
+    folder_id: uuid.UUID,
+    user: models.User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> models.StarResponse:
+    """Unstar a folder."""
+    try:
+        is_starred, stars_count = await crud.unstar_folder(
+            db=db, user_id=user.id, folder_id=folder_id
+        )
+        return models.StarResponse(starred=is_starred, stars_count=stars_count)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))

@@ -516,3 +516,36 @@ async def clear_deck_exam_score(
 
     await crud.clear_deck_exam_score(db, user_id=user.id, deck_id=deck_id)
     return None
+
+
+@router.post("/{deck_id}/star", response_model=models.StarResponse)
+async def star_deck(
+    deck_id: uuid.UUID,
+    user: models.User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> models.StarResponse:
+    """Star a deck."""
+    try:
+        is_starred, stars_count = await crud.star_deck(
+            db=db, user_id=user.id, deck_id=deck_id
+        )
+        return models.StarResponse(starred=is_starred, stars_count=stars_count)
+    except ValueError as e:
+        status_code = 400 if "Cannot star" in str(e) else 404
+        raise HTTPException(status_code=status_code, detail=str(e))
+
+
+@router.delete("/{deck_id}/star", response_model=models.StarResponse)
+async def unstar_deck(
+    deck_id: uuid.UUID,
+    user: models.User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> models.StarResponse:
+    """Unstar a deck."""
+    try:
+        is_starred, stars_count = await crud.unstar_deck(
+            db=db, user_id=user.id, deck_id=deck_id
+        )
+        return models.StarResponse(starred=is_starred, stars_count=stars_count)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))

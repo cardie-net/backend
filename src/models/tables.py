@@ -115,6 +115,59 @@ class User(SQLModel, table=True):
         sa_relationship_kwargs={"lazy": "selectin", "cascade": "all, delete-orphan"},
         back_populates="owner",
     )
+    starred_decks: list["DeckStar"] = Relationship(
+        sa_relationship_kwargs={"lazy": "selectin", "cascade": "all, delete-orphan"},
+        back_populates="user",
+    )
+    starred_folders: list["FolderStar"] = Relationship(
+        sa_relationship_kwargs={"lazy": "selectin", "cascade": "all, delete-orphan"},
+        back_populates="user",
+    )
+
+
+# --- Star Models ---
+
+
+class DeckStar(SQLModel, table=True):
+    __tablename__ = "deck_stars"
+    __table_args__ = (UniqueConstraint("user_id", "deck_id", name="uq_user_deck_star"),)
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID = Field(foreign_key="user.id", index=True)
+    deck_id: uuid.UUID = Field(foreign_key="decks.id", index=True)
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(
+            UTCDateTime,
+            nullable=False,
+            default=lambda: datetime.now(timezone.utc),
+        ),
+    )
+
+    user: Optional["User"] = Relationship(back_populates="starred_decks")
+    deck: Optional["Deck"] = Relationship(back_populates="stars")
+
+
+class FolderStar(SQLModel, table=True):
+    __tablename__ = "folder_stars"
+    __table_args__ = (
+        UniqueConstraint("user_id", "folder_id", name="uq_user_folder_star"),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID = Field(foreign_key="user.id", index=True)
+    folder_id: uuid.UUID = Field(foreign_key="folders.id", index=True)
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(
+            UTCDateTime,
+            nullable=False,
+            default=lambda: datetime.now(timezone.utc),
+        ),
+    )
+
+    user: Optional["User"] = Relationship(back_populates="starred_folders")
+    folder: Optional["Folder"] = Relationship(back_populates="stars")
 
 
 # --- Folder Models ---
@@ -139,9 +192,29 @@ class Folder(FolderBase, table=True):
 
     id: uuid.UUID | None = Field(default_factory=uuid.uuid4, primary_key=True)
     user_id: uuid.UUID | None = Field(default=None, foreign_key="user.id")
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(
+            UTCDateTime,
+            nullable=False,
+            default=lambda: datetime.now(timezone.utc),
+        ),
+    )
+    updated_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(
+            UTCDateTime,
+            nullable=False,
+            default=lambda: datetime.now(timezone.utc),
+        ),
+    )
 
     owner: Optional["User"] = Relationship(back_populates="folders")
     decks: list["Deck"] = Relationship(
+        sa_relationship_kwargs={"lazy": "selectin", "cascade": "all, delete-orphan"},
+        back_populates="folder",
+    )
+    stars: list["FolderStar"] = Relationship(
         sa_relationship_kwargs={"lazy": "selectin", "cascade": "all, delete-orphan"},
         back_populates="folder",
     )
@@ -222,6 +295,10 @@ class Deck(DeckBase, table=True):
         sa_relationship_kwargs={"lazy": "selectin", "cascade": "all, delete-orphan"},
         back_populates="deck",
     )
+    stars: list["DeckStar"] = Relationship(
+        sa_relationship_kwargs={"lazy": "selectin", "cascade": "all, delete-orphan"},
+        back_populates="deck",
+    )
 
     @property
     def type(self) -> str:
@@ -275,6 +352,27 @@ Deck.cards_count = column_property(
     select(func.count(Card.id))
     .where(Card.deck_id == Deck.id)
     .correlate_except(Card)
+    .scalar_subquery()
+)
+
+Deck.stars_count = column_property(
+    select(func.count(DeckStar.id))
+    .where(DeckStar.deck_id == Deck.id)
+    .correlate_except(DeckStar)
+    .scalar_subquery()
+)
+
+Folder.stars_count = column_property(
+    select(func.count(FolderStar.id))
+    .where(FolderStar.folder_id == Folder.id)
+    .correlate_except(FolderStar)
+    .scalar_subquery()
+)
+
+Folder.decks_count = column_property(
+    select(func.count(Deck.id))
+    .where(Deck.folder_id == Folder.id)
+    .correlate_except(Deck)
     .scalar_subquery()
 )
 
