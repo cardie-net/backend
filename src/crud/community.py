@@ -115,6 +115,7 @@ async def get_community_items(
                 "username": owner.username if owner else "unknown",
                 "display_name": owner.display_name if owner else "Unknown",
                 "avatar_url": owner.avatar_url if owner else None,
+                "is_guest": bool(owner.is_guest) if owner else False,
             }
             props = d.properties or {}
             items.append(
@@ -154,6 +155,7 @@ async def get_community_items(
                 "username": owner.username if owner else "unknown",
                 "display_name": owner.display_name if owner else "Unknown",
                 "avatar_url": owner.avatar_url if owner else None,
+                "is_guest": bool(owner.is_guest) if owner else False,
             }
             props = f.properties or {}
             items.append(
@@ -181,12 +183,13 @@ async def get_community_items(
         scored_items = []
         for it in items:
             owner = it["owner"]
+            is_guest = owner.get("is_guest", False)
             score = calculate_fuzzy_match_score(
                 query=query,
                 name=it["name"],
                 description=it.get("_desc"),
-                username=owner.get("username", ""),
-                display_name=owner.get("display_name", ""),
+                username="" if is_guest else owner.get("username", ""),
+                display_name="Guest" if is_guest else owner.get("display_name", ""),
             )
             if score >= threshold:
                 it["_score"] = score
@@ -379,6 +382,7 @@ async def get_user_favorite_items(
             "username": owner.username if owner else "unknown",
             "display_name": owner.display_name if owner else "Unknown",
             "avatar_url": owner.avatar_url if owner else None,
+            "is_guest": bool(owner.is_guest) if owner else False,
         }
         items.append(
             {
@@ -420,6 +424,7 @@ async def get_user_favorite_items(
             "username": owner.username if owner else "unknown",
             "display_name": owner.display_name if owner else "Unknown",
             "avatar_url": owner.avatar_url if owner else None,
+            "is_guest": bool(owner.is_guest) if owner else False,
         }
         items.append(
             {

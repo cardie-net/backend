@@ -218,11 +218,11 @@ async def test_patch_user_validation(async_client: AsyncClient, guest_token1: st
 
 
 @pytest.mark.asyncio
-async def test_get_user_profile_success(async_client: AsyncClient, guest_token1: str):
-    # First, get the me data to find the generated username
+async def test_get_user_profile_success(async_client: AsyncClient, user_token: str):
+    # First, get the me data to find the username
     response = await async_client.get(
         "/api/v1/users/me",
-        headers={"X-Test-Cookie": guest_token1},
+        headers={"X-Test-Cookie": user_token},
     )
     assert response.status_code == 200
     user_data = response.json()
@@ -234,6 +234,21 @@ async def test_get_user_profile_success(async_client: AsyncClient, guest_token1:
     profile_data = profile_response.json()
     assert profile_data["username"] == username
     assert profile_data["id"] == user_data["id"]
+
+
+@pytest.mark.asyncio
+async def test_get_guest_user_profile_returns_404(
+    async_client: AsyncClient, guest_token1: str
+):
+    me_res = await async_client.get(
+        "/api/v1/users/me",
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    guest_username = me_res.json()["username"]
+
+    profile_response = await async_client.get(f"/api/v1/users/profile/{guest_username}")
+    assert profile_response.status_code == 404
+    assert profile_response.json()["detail"] == "User not found"
 
 
 @pytest.mark.asyncio
@@ -312,12 +327,12 @@ async def test_remove_avatar_guest_forbidden(
 
 @pytest.mark.asyncio
 async def test_get_user_profile_default_properties(
-    async_client: AsyncClient, guest_token1: str
+    async_client: AsyncClient, user_token: str
 ):
-    # First, get the me data to find the generated username
+    # First, get the me data to find the username
     response = await async_client.get(
         "/api/v1/users/me",
-        headers={"X-Test-Cookie": guest_token1},
+        headers={"X-Test-Cookie": user_token},
     )
     user_data = response.json()
     username = user_data["username"]
@@ -333,8 +348,8 @@ async def test_get_user_profile_default_properties(
 
 
 @pytest.mark.asyncio
-async def test_patch_user_properties(async_client: AsyncClient, guest_token1: str):
-    token = guest_token1
+async def test_patch_user_properties(async_client: AsyncClient, user_token: str):
+    token = user_token
     response = await async_client.patch(
         "/api/v1/users/me",
         headers={"X-Test-Cookie": token},
@@ -595,10 +610,10 @@ async def test_user_timestamps(async_client: AsyncClient, guest_token1: str):
 
 
 @pytest.mark.asyncio
-async def test_user_profile_timestamps(async_client: AsyncClient, guest_token1: str):
+async def test_user_profile_timestamps(async_client: AsyncClient, user_token: str):
     me_response = await async_client.get(
         "/api/v1/users/me",
-        headers={"X-Test-Cookie": guest_token1},
+        headers={"X-Test-Cookie": user_token},
     )
     username = me_response.json()["username"]
 

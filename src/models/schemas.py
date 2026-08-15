@@ -283,6 +283,7 @@ class ItemOwner(BaseModel):
     username: str
     display_name: str
     avatar_url: str | None = None
+    is_guest: bool = False
 
 
 class CommunityDeckRead(DeckBase):

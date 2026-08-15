@@ -196,7 +196,7 @@ async def get_user_profile(
         select(models.User).where(models.User.username == username)
     )
     user = result.scalars().first()
-    if not user:
+    if not user or user.is_guest:
         raise HTTPException(status_code=404, detail="User not found")
     return _user_to_dict(user)
 
