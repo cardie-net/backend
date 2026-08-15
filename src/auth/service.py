@@ -3,6 +3,7 @@ import random
 import re
 import string
 import uuid
+from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
@@ -141,6 +142,9 @@ async def handle_oauth_callback(
 
         user_stmt = select(User).where(User.id == oauth_acc.user_id)
         user = (await db.execute(user_stmt)).unique().scalar_one_or_none()
+        if user:
+            user.last_active_at = datetime.now(timezone.utc)
+            db.add(user)
         await db.commit()
         return user
 

@@ -1,8 +1,9 @@
 import uuid
+from datetime import datetime, timezone
 from typing import Any, Literal, Optional
 
 from pydantic import field_validator
-from sqlalchemy import JSON, Column, UniqueConstraint, func, select, text
+from sqlalchemy import JSON, Column, DateTime, UniqueConstraint, func, select, text
 from sqlalchemy.orm import column_property
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -58,6 +59,22 @@ class User(SQLModel, table=True):
     display_name: str = Field(max_length=80)
     avatar_url: str | None = Field(default=None)
     properties: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(
+            DateTime(timezone=True),
+            nullable=False,
+            default=lambda: datetime.now(timezone.utc),
+        ),
+    )
+    last_active_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(
+            DateTime(timezone=True),
+            nullable=False,
+            default=lambda: datetime.now(timezone.utc),
+        ),
+    )
 
     oauth_accounts: list["OAuthAccount"] = Relationship(
         back_populates="user",

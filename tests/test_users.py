@@ -578,3 +578,34 @@ async def test_update_user_preferences(async_client: AsyncClient, guest_token1: 
     )
     assert response3.status_code == 200
     assert response3.json()["preferences"] is None
+
+
+@pytest.mark.asyncio
+async def test_user_timestamps(async_client: AsyncClient, guest_token1: str):
+    response = await async_client.get(
+        "/api/v1/users/me",
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "created_at" in data
+    assert data["created_at"] is not None
+    assert "last_active_at" in data
+    assert data["last_active_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_user_profile_timestamps(async_client: AsyncClient, guest_token1: str):
+    me_response = await async_client.get(
+        "/api/v1/users/me",
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    username = me_response.json()["username"]
+
+    profile_response = await async_client.get(f"/api/v1/users/profile/{username}")
+    assert profile_response.status_code == 200
+    profile_data = profile_response.json()
+    assert "created_at" in profile_data
+    assert profile_data["created_at"] is not None
+    assert "last_active_at" in profile_data
+    assert profile_data["last_active_at"] is not None

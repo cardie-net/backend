@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel
@@ -38,6 +39,8 @@ class UserRead(BaseModel):
     bio: str | None = None
     social_links: dict[str, str] | None = None
     preferences: UserPreferences | None = None
+    created_at: datetime | None = None
+    last_active_at: datetime | None = None
 
 
 class UserCreate(BaseModel):

@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
@@ -71,6 +72,10 @@ def create_auth_router() -> APIRouter:
             raise HTTPException(status_code=400, detail="LOGIN_BAD_CREDENTIALS")
         if not user.is_verified:
             raise HTTPException(status_code=400, detail="USER_NOT_VERIFIED")
+
+        user.last_active_at = datetime.now(timezone.utc)
+        db.add(user)
+        await db.commit()
 
         access_token = create_access_token(user.id)
         # We return 204 typically or we can return 200 with JSON if swagger needs it, but the tests check for 204 for login success or 200 depending. Wait, the old login returned 204 and set a cookie. Actually, fastapi-users returns JSON with access_token. But wait, in test_auth.py test_login_verified_user it checks `assert response.status_code == 204` and `assert "cardie_session" in response.cookies`. So it returned 204.

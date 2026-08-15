@@ -34,6 +34,8 @@ def _user_to_dict(user: models.User) -> dict:
         "username": user.username,
         "display_name": user.display_name,
         "avatar_url": user.avatar_url,
+        "created_at": user.created_at,
+        "last_active_at": user.last_active_at,
         "bio": props.get("bio"),
         "social_links": props.get("social_links"),
         "preferences": props.get("preferences"),

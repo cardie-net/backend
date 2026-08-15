@@ -100,6 +100,19 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found",
         )
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    last_active = user.last_active_at
+    if last_active is not None and last_active.tzinfo is None:
+        last_active = last_active.replace(tzinfo=datetime.timezone.utc)
+    elif last_active is not None:
+        last_active = last_active.astimezone(datetime.timezone.utc)
+
+    if last_active is None or (now - last_active) > datetime.timedelta(minutes=1):
+        user.last_active_at = now
+        db.add(user)
+        await db.commit()
+
     return user
 
 
