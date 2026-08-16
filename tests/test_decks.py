@@ -825,6 +825,32 @@ async def test_patch_deck_description(
     assert resp.status_code == 200
     assert resp.json()["properties"]["description"] == "A very nice deck"
 
+    # Remove description by setting to None
+    resp = await async_client.patch(
+        f"/api/v1/decks/{upload_deck_id}",
+        headers={"X-Test-Cookie": guest_token},
+        json={"properties": {"description": None}},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["properties"]["description"] is None
+
+    # Re-add and remove by setting to empty string / whitespace
+    resp = await async_client.patch(
+        f"/api/v1/decks/{upload_deck_id}",
+        headers={"X-Test-Cookie": guest_token},
+        json={"properties": {"description": "Another description"}},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["properties"]["description"] == "Another description"
+
+    resp = await async_client.patch(
+        f"/api/v1/decks/{upload_deck_id}",
+        headers={"X-Test-Cookie": guest_token},
+        json={"properties": {"description": "   "}},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["properties"]["description"] is None
+
 
 @pytest.mark.asyncio
 async def test_deck_cards_count(async_client: AsyncClient, guest_token: str):

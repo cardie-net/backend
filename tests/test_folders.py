@@ -611,3 +611,29 @@ async def test_patch_folder_description(async_client: AsyncClient, guest_token1:
     )
     assert resp.status_code == 200
     assert resp.json()["properties"]["description"] == "A nice folder"
+
+    # Remove description by setting to None
+    resp = await async_client.patch(
+        f"/api/v1/folders/{folder_id}",
+        headers={"X-Test-Cookie": guest_token1},
+        json={"properties": {"description": None}},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["properties"]["description"] is None
+
+    # Re-add and remove by setting to empty string / whitespace
+    resp = await async_client.patch(
+        f"/api/v1/folders/{folder_id}",
+        headers={"X-Test-Cookie": guest_token1},
+        json={"properties": {"description": "Another folder description"}},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["properties"]["description"] == "Another folder description"
+
+    resp = await async_client.patch(
+        f"/api/v1/folders/{folder_id}",
+        headers={"X-Test-Cookie": guest_token1},
+        json={"properties": {"description": "   "}},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["properties"]["description"] is None

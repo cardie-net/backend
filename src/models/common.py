@@ -37,8 +37,12 @@ class ItemProperties(BaseModel):
     @field_validator("description")
     @classmethod
     def validate_description(cls, v: str | None) -> str | None:
-        if v is not None and len(v) > 500:
-            raise ValueError("Description must be 500 characters or fewer")
+        if v is not None:
+            v = v.strip()
+            if len(v) > 500:
+                raise ValueError("Description must be 500 characters or fewer")
+            if not v:
+                return None
         return v
 
 
