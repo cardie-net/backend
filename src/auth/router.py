@@ -107,6 +107,16 @@ def create_auth_router() -> APIRouter:
         if existing:
             raise HTTPException(status_code=400, detail="REGISTER_USER_ALREADY_EXISTS")
 
+        if user_create.username:
+            username_stmt = select(User).where(User.username == user_create.username)
+            username_existing = (
+                (await db.execute(username_stmt)).unique().scalar_one_or_none()
+            )
+            if username_existing:
+                raise HTTPException(
+                    status_code=400, detail="REGISTER_USER_ALREADY_EXISTS"
+                )
+
         return await create_user(db, user_create)
 
     @router.post("/forgot-password", status_code=202, tags=["auth"])

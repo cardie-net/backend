@@ -5,11 +5,12 @@ import string
 import uuid
 from datetime import datetime, timezone
 
+from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from ..config import settings
-from ..models import OAuthAccount, User, UserCreate
+from ..models import OAuthAccount, User, UserCreate, is_reserved_username
 from ..services.email import send_email
 from .utils import get_password_hash
 
@@ -41,7 +42,7 @@ async def generate_unique_username(db: AsyncSession, email: str) -> str:
     existing_users = results.unique().scalars().all()
     existing_usernames = {u.username for u in existing_users}
 
-    if username in existing_usernames:
+    if username in existing_usernames or is_reserved_username(username):
         counter = 1
         match_len = 0
         match = re.search(r"(\d+)$", username)
@@ -51,13 +52,19 @@ async def generate_unique_username(db: AsyncSession, email: str) -> str:
             match_len = len(match.group(1))
 
         counter_str = str(counter).zfill(match_len) if match_len > 0 else str(counter)
-        username = f"{base_username}{counter_str}"
-        while username in existing_usernames:
+        truncated_base = base_username[: 32 - len(counter_str)]
+        username = f"{truncated_base}{counter_str}"
+        while (
+            username in existing_usernames
+            or is_reserved_username(username)
+            or len(username) < 8
+        ):
             counter += 1
             counter_str = (
                 str(counter).zfill(match_len) if match_len > 0 else str(counter)
             )
-            username = f"{base_username}{counter_str}"
+            truncated_base = base_username[: 32 - len(counter_str)]
+            username = f"{truncated_base}{counter_str}"
 
     return username
 
@@ -90,7 +97,13 @@ async def request_verification(db: AsyncSession, user: User) -> None:
 async def create_user(db: AsyncSession, user_create: UserCreate) -> User:
     """Create a new user and trigger email verification if necessary."""
     username = user_create.username
-    if not username:
+    if username:
+        if is_reserved_username(username):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="USERNAME_RESERVED",
+            )
+    else:
         username = await generate_unique_username(db, user_create.email)
 
     display_name = user_create.display_name

@@ -64,6 +64,16 @@ async def update_current_user(
                 detail="Guest users cannot change their username or display name",
             )
 
+    if (
+        "username" in update_data
+        and update_data["username"]
+        and models.is_reserved_username(update_data["username"])
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="USERNAME_RESERVED",
+        )
+
     bio = update_data.pop("bio", None)
     social_links = update_data.pop("social_links", None)
     preferences = update_data.pop("preferences", None)

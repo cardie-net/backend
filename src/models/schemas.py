@@ -11,6 +11,7 @@ from .common import (
     ItemProperties,
     PrivacyLevel,
     SocialLinks,
+    is_reserved_username,
     validate_optional_slug,
     validate_slug,
 )
@@ -47,8 +48,17 @@ class UserCreate(BaseModel):
     email: str
     password: str
     is_guest: bool = False
-    username: str | None = None
-    display_name: str | None = None
+    username: str | None = PydanticField(
+        default=None, min_length=8, max_length=32, pattern=r"^[a-zA-Z0-9_-]+$"
+    )
+    display_name: str | None = PydanticField(default=None, min_length=1, max_length=80)
+
+    @field_validator("username")
+    @classmethod
+    def validate_username_create(cls, v: str | None) -> str | None:
+        if v is not None and is_reserved_username(v):
+            raise ValueError("Username is reserved")
+        return v
 
 
 class UserUpdate(BaseModel):
@@ -61,6 +71,13 @@ class UserUpdate(BaseModel):
     bio: str | None = PydanticField(default=None, max_length=500)
     social_links: SocialLinks | None = None
     preferences: UserPreferences | None = None
+
+    @field_validator("username")
+    @classmethod
+    def validate_username_update(cls, v: str | None) -> str | None:
+        if v is not None and is_reserved_username(v):
+            raise ValueError("Username is reserved")
+        return v
 
 
 # --- Folder Schemas ---

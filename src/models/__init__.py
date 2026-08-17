@@ -1,9 +1,11 @@
 from .common import (
     ALLOWED_SOCIAL_PLATFORMS,
+    RESERVED_USERNAMES,
     ItemProperties,
     PrivacyLevel,
     SocialLinks,
     UserProperties,
+    is_reserved_username,
     validate_optional_slug,
     validate_slug,
 )
@@ -110,6 +112,7 @@ __all__ = [
     "ItemProperties",
     "OAuthAccount",
     "PrivacyLevel",
+    "RESERVED_USERNAMES",
     "SocialLinks",
     "StarResponse",
     "TextElement",
@@ -123,6 +126,7 @@ __all__ = [
     "UserRead",
     "UserStarredResponse",
     "UserUpdate",
+    "is_reserved_username",
     "validate_optional_slug",
     "validate_slug",
     "SRSCardProgressRead",

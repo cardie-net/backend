@@ -624,3 +624,62 @@ async def test_user_profile_timestamps(async_client: AsyncClient, user_token: st
     assert profile_data["created_at"] is not None
     assert "last_active_at" in profile_data
     assert profile_data["last_active_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_reserved_username_patch_rejected(
+    async_client: AsyncClient, user_token: str
+):
+    reserved_names = [
+        "settings",
+        "Settings",
+        "community",
+        "COMMUNITY",
+        "statistics",
+        "forgot-password",
+        "forgot_password",
+        "admin",
+        "api",
+        "login",
+    ]
+    for reserved in reserved_names:
+        response = await async_client.patch(
+            "/api/v1/users/me",
+            headers={"X-Test-Cookie": user_token},
+            json={"username": reserved},
+        )
+        assert response.status_code in (400, 422)
+
+
+@pytest.mark.asyncio
+async def test_reserved_username_register_rejected(async_client: AsyncClient):
+    response = await async_client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "customreserved@example.com",
+            "password": "password123",
+            "username": "settings",
+        },
+    )
+    assert response.status_code in (400, 422)
+
+
+@pytest.mark.asyncio
+async def test_reserved_username_auto_generation_avoids_reserved(
+    async_client: AsyncClient,
+):
+    # 'settings' is 8 chars, but reserved. Auto-generation should append a counter.
+    res_settings = await async_client.post(
+        "/api/v1/auth/register",
+        json={"email": "settings@example.com", "password": "password123"},
+    )
+    assert res_settings.status_code == 201
+    assert res_settings.json()["username"] == "settings1"
+
+    # 'community' is 9 chars, but reserved.
+    res_comm = await async_client.post(
+        "/api/v1/auth/register",
+        json={"email": "community@example.com", "password": "password123"},
+    )
+    assert res_comm.status_code == 201
+    assert res_comm.json()["username"] == "community1"

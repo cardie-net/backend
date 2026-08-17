@@ -22,6 +22,37 @@ def validate_optional_slug(value: str | None) -> str | None:
     return validate_slug(value)
 
 
+from pathlib import Path
+
+
+def _load_reserved_usernames() -> frozenset[str]:
+    """Load reserved usernames from the text file."""
+    reserved_file = Path(__file__).resolve().parent / "reserved_usernames.txt"
+    if not reserved_file.exists():
+        return frozenset()
+    with open(reserved_file, "r", encoding="utf-8") as f:
+        return frozenset(
+            line.strip().lower()
+            for line in f
+            if line.strip() and not line.strip().startswith("#")
+        )
+
+
+RESERVED_USERNAMES: frozenset[str] = _load_reserved_usernames()
+
+
+def is_reserved_username(username: str) -> bool:
+    """Check whether a username is reserved to prevent route collision."""
+    if not username:
+        return False
+    normalized = username.strip().lower()
+    return (
+        normalized in RESERVED_USERNAMES
+        or normalized.replace("-", "_") in RESERVED_USERNAMES
+        or normalized.replace("_", "-") in RESERVED_USERNAMES
+    )
+
+
 class PrivacyLevel(str, Enum):
     PRIVATE = "private"
     UNLISTED = "unlisted"
