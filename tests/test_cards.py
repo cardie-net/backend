@@ -674,3 +674,75 @@ async def test_create_cards_batch_not_found(
         headers={"X-Test-Cookie": guest_token1},
     )
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_card_with_progress_success(
+    async_client: AsyncClient, guest_token1: str, private_deck_id: int
+):
+    create_resp = await async_client.post(
+        f"/api/v1/decks/{private_deck_id}/cards/",
+        json={
+            "front": [{"type": "text", "content": "Front"}],
+            "back": [{"type": "text", "content": "Back"}],
+        },
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    card_id = create_resp.json()["id"]
+
+    # Add card progress
+    sync_resp = await async_client.post(
+        f"/api/v1/decks/{private_deck_id}/progress",
+        json={"progress": [{"card_id": card_id, "box": 2}]},
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    assert sync_resp.status_code == 204
+
+    # Delete the card
+    del_resp = await async_client.delete(
+        f"/api/v1/decks/{private_deck_id}/cards/{card_id}",
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    assert del_resp.status_code == 204
+
+    # Verify progress is gone
+    prog_resp = await async_client.get(
+        f"/api/v1/decks/{private_deck_id}/progress",
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    assert prog_resp.status_code == 200
+    assert len(prog_resp.json()) == 0
+
+
+@pytest.mark.asyncio
+async def test_delete_card_with_srs_progress_success(
+    async_client: AsyncClient, guest_token1: str, private_deck_id: int
+):
+    create_resp = await async_client.post(
+        f"/api/v1/decks/{private_deck_id}/cards/",
+        json={
+            "front": [{"type": "text", "content": "Front"}],
+            "back": [{"type": "text", "content": "Back"}],
+        },
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    card_id = create_resp.json()["id"]
+
+    # Activate SRS and review card
+    await async_client.post(
+        f"/api/v1/decks/{private_deck_id}/srs/activate",
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    review_resp = await async_client.post(
+        f"/api/v1/decks/{private_deck_id}/srs/review",
+        json={"reviews": [{"card_id": card_id, "rating": 3}]},
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    assert review_resp.status_code == 204
+
+    # Delete the card
+    del_resp = await async_client.delete(
+        f"/api/v1/decks/{private_deck_id}/cards/{card_id}",
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    assert del_resp.status_code == 204

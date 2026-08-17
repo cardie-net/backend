@@ -63,7 +63,7 @@ class OAuthAccount(SQLModel, table=True):
     refresh_token: str | None = None
     account_id: str = Field(index=True)
     account_email: str
-    user_id: uuid.UUID = Field(foreign_key="user.id", index=True)
+    user_id: uuid.UUID = Field(foreign_key="user.id", index=True, ondelete="CASCADE")
     user: "User" = Relationship(back_populates="oauth_accounts")
 
 
@@ -105,22 +105,90 @@ class User(SQLModel, table=True):
 
     oauth_accounts: list["OAuthAccount"] = Relationship(
         back_populates="user",
-        sa_relationship_kwargs={"lazy": "joined", "cascade": "all, delete-orphan"},
+        sa_relationship_kwargs={
+            "lazy": "joined",
+            "cascade": "all, delete-orphan",
+            "passive_deletes": True,
+        },
     )
     decks: list["Deck"] = Relationship(
-        sa_relationship_kwargs={"lazy": "selectin", "cascade": "all, delete-orphan"},
+        sa_relationship_kwargs={
+            "lazy": "selectin",
+            "cascade": "all, delete-orphan",
+            "passive_deletes": True,
+        },
         back_populates="owner",
     )
     folders: list["Folder"] = Relationship(
-        sa_relationship_kwargs={"lazy": "selectin", "cascade": "all, delete-orphan"},
+        sa_relationship_kwargs={
+            "lazy": "selectin",
+            "cascade": "all, delete-orphan",
+            "passive_deletes": True,
+        },
         back_populates="owner",
     )
     starred_decks: list["DeckStar"] = Relationship(
-        sa_relationship_kwargs={"lazy": "selectin", "cascade": "all, delete-orphan"},
+        sa_relationship_kwargs={
+            "lazy": "selectin",
+            "cascade": "all, delete-orphan",
+            "passive_deletes": True,
+        },
         back_populates="user",
     )
     starred_folders: list["FolderStar"] = Relationship(
-        sa_relationship_kwargs={"lazy": "selectin", "cascade": "all, delete-orphan"},
+        sa_relationship_kwargs={
+            "lazy": "selectin",
+            "cascade": "all, delete-orphan",
+            "passive_deletes": True,
+        },
+        back_populates="user",
+    )
+    card_progress: list["CardProgress"] = Relationship(
+        sa_relationship_kwargs={
+            "lazy": "selectin",
+            "cascade": "all, delete-orphan",
+            "passive_deletes": True,
+        },
+        back_populates="user",
+    )
+    srs_card_progress: list["SRSCardProgress"] = Relationship(
+        sa_relationship_kwargs={
+            "lazy": "selectin",
+            "cascade": "all, delete-orphan",
+            "passive_deletes": True,
+        },
+        back_populates="user",
+    )
+    srs_deck_activations: list["SRSDeckActivation"] = Relationship(
+        sa_relationship_kwargs={
+            "lazy": "selectin",
+            "cascade": "all, delete-orphan",
+            "passive_deletes": True,
+        },
+        back_populates="user",
+    )
+    deck_match_times: list["DeckMatchTime"] = Relationship(
+        sa_relationship_kwargs={
+            "lazy": "selectin",
+            "cascade": "all, delete-orphan",
+            "passive_deletes": True,
+        },
+        back_populates="user",
+    )
+    deck_exam_scores: list["DeckExamScore"] = Relationship(
+        sa_relationship_kwargs={
+            "lazy": "selectin",
+            "cascade": "all, delete-orphan",
+            "passive_deletes": True,
+        },
+        back_populates="user",
+    )
+    daily_activities: list["UserDailyActivity"] = Relationship(
+        sa_relationship_kwargs={
+            "lazy": "selectin",
+            "cascade": "all, delete-orphan",
+            "passive_deletes": True,
+        },
         back_populates="user",
     )
 
@@ -133,8 +201,8 @@ class DeckStar(SQLModel, table=True):
     __table_args__ = (UniqueConstraint("user_id", "deck_id", name="uq_user_deck_star"),)
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    user_id: uuid.UUID = Field(foreign_key="user.id", index=True)
-    deck_id: uuid.UUID = Field(foreign_key="decks.id", index=True)
+    user_id: uuid.UUID = Field(foreign_key="user.id", index=True, ondelete="CASCADE")
+    deck_id: uuid.UUID = Field(foreign_key="decks.id", index=True, ondelete="CASCADE")
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
         sa_column=Column(
@@ -155,8 +223,10 @@ class FolderStar(SQLModel, table=True):
     )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    user_id: uuid.UUID = Field(foreign_key="user.id", index=True)
-    folder_id: uuid.UUID = Field(foreign_key="folders.id", index=True)
+    user_id: uuid.UUID = Field(foreign_key="user.id", index=True, ondelete="CASCADE")
+    folder_id: uuid.UUID = Field(
+        foreign_key="folders.id", index=True, ondelete="CASCADE"
+    )
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
         sa_column=Column(
@@ -177,7 +247,9 @@ class FolderBase(SQLModel):
     name: str = Field(max_length=80)
     slug: str = Field(index=True, max_length=80)
     privacy: PrivacyLevel = Field(default=PrivacyLevel.PRIVATE)
-    parent_id: uuid.UUID | None = Field(default=None, foreign_key="folders.id")
+    parent_id: uuid.UUID | None = Field(
+        default=None, foreign_key="folders.id", ondelete="CASCADE"
+    )
     properties: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
 
     @field_validator("slug")
@@ -191,7 +263,9 @@ class Folder(FolderBase, table=True):
     __table_args__ = (UniqueConstraint("user_id", "slug", name="uq_folder_user_slug"),)
 
     id: uuid.UUID | None = Field(default_factory=uuid.uuid4, primary_key=True)
-    user_id: uuid.UUID | None = Field(default=None, foreign_key="user.id")
+    user_id: uuid.UUID | None = Field(
+        default=None, foreign_key="user.id", ondelete="CASCADE"
+    )
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
         sa_column=Column(
@@ -211,11 +285,19 @@ class Folder(FolderBase, table=True):
 
     owner: Optional["User"] = Relationship(back_populates="folders")
     decks: list["Deck"] = Relationship(
-        sa_relationship_kwargs={"lazy": "selectin", "cascade": "all, delete-orphan"},
+        sa_relationship_kwargs={
+            "lazy": "selectin",
+            "cascade": "all, delete-orphan",
+            "passive_deletes": True,
+        },
         back_populates="folder",
     )
     stars: list["FolderStar"] = Relationship(
-        sa_relationship_kwargs={"lazy": "selectin", "cascade": "all, delete-orphan"},
+        sa_relationship_kwargs={
+            "lazy": "selectin",
+            "cascade": "all, delete-orphan",
+            "passive_deletes": True,
+        },
         back_populates="folder",
     )
 
@@ -225,7 +307,11 @@ class Folder(FolderBase, table=True):
     )
     child_folders: list["Folder"] = Relationship(
         back_populates="parent",
-        sa_relationship_kwargs={"lazy": "selectin", "cascade": "all, delete-orphan"},
+        sa_relationship_kwargs={
+            "lazy": "selectin",
+            "cascade": "all, delete-orphan",
+            "passive_deletes": True,
+        },
     )
 
     @property
@@ -245,9 +331,27 @@ class CardBase(SQLModel):
 class Card(CardBase, table=True):
     __tablename__ = "cards"
     id: uuid.UUID | None = Field(default_factory=uuid.uuid4, primary_key=True)
-    deck_id: uuid.UUID | None = Field(default=None, foreign_key="decks.id")
+    deck_id: uuid.UUID | None = Field(
+        default=None, foreign_key="decks.id", ondelete="CASCADE"
+    )
 
     deck: Optional["Deck"] = Relationship(back_populates="cards")
+    progress: list["CardProgress"] = Relationship(
+        sa_relationship_kwargs={
+            "lazy": "selectin",
+            "cascade": "all, delete-orphan",
+            "passive_deletes": True,
+        },
+        back_populates="card",
+    )
+    srs_progress: list["SRSCardProgress"] = Relationship(
+        sa_relationship_kwargs={
+            "lazy": "selectin",
+            "cascade": "all, delete-orphan",
+            "passive_deletes": True,
+        },
+        back_populates="card",
+    )
 
 
 # --- Deck Models ---
@@ -257,7 +361,9 @@ class DeckBase(SQLModel):
     name: str = Field(max_length=80)
     slug: str = Field(index=True, max_length=80)
     privacy: PrivacyLevel = Field(default=PrivacyLevel.PRIVATE)
-    folder_id: uuid.UUID | None = Field(default=None, foreign_key="folders.id")
+    folder_id: uuid.UUID | None = Field(
+        default=None, foreign_key="folders.id", ondelete="CASCADE"
+    )
     properties: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
 
     @field_validator("slug")
@@ -271,7 +377,9 @@ class Deck(DeckBase, table=True):
     __table_args__ = (UniqueConstraint("user_id", "slug", name="uq_deck_user_slug"),)
 
     id: uuid.UUID | None = Field(default_factory=uuid.uuid4, primary_key=True)
-    user_id: uuid.UUID | None = Field(default=None, foreign_key="user.id")
+    user_id: uuid.UUID | None = Field(
+        default=None, foreign_key="user.id", ondelete="CASCADE"
+    )
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
         sa_column=Column(
@@ -292,11 +400,43 @@ class Deck(DeckBase, table=True):
     owner: Optional["User"] = Relationship(back_populates="decks")
     folder: Optional["Folder"] = Relationship(back_populates="decks")
     cards: list["Card"] = Relationship(
-        sa_relationship_kwargs={"lazy": "selectin", "cascade": "all, delete-orphan"},
+        sa_relationship_kwargs={
+            "lazy": "selectin",
+            "cascade": "all, delete-orphan",
+            "passive_deletes": True,
+        },
         back_populates="deck",
     )
     stars: list["DeckStar"] = Relationship(
-        sa_relationship_kwargs={"lazy": "selectin", "cascade": "all, delete-orphan"},
+        sa_relationship_kwargs={
+            "lazy": "selectin",
+            "cascade": "all, delete-orphan",
+            "passive_deletes": True,
+        },
+        back_populates="deck",
+    )
+    srs_activations: list["SRSDeckActivation"] = Relationship(
+        sa_relationship_kwargs={
+            "lazy": "selectin",
+            "cascade": "all, delete-orphan",
+            "passive_deletes": True,
+        },
+        back_populates="deck",
+    )
+    match_times: list["DeckMatchTime"] = Relationship(
+        sa_relationship_kwargs={
+            "lazy": "selectin",
+            "cascade": "all, delete-orphan",
+            "passive_deletes": True,
+        },
+        back_populates="deck",
+    )
+    exam_scores: list["DeckExamScore"] = Relationship(
+        sa_relationship_kwargs={
+            "lazy": "selectin",
+            "cascade": "all, delete-orphan",
+            "passive_deletes": True,
+        },
         back_populates="deck",
     )
 
@@ -315,9 +455,12 @@ class CardProgress(SQLModel, table=True):
     )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    user_id: uuid.UUID = Field(foreign_key="user.id", index=True)
-    card_id: uuid.UUID = Field(foreign_key="cards.id", index=True)
+    user_id: uuid.UUID = Field(foreign_key="user.id", index=True, ondelete="CASCADE")
+    card_id: uuid.UUID = Field(foreign_key="cards.id", index=True, ondelete="CASCADE")
     box: int = Field(default=1)  # 1, 2, or 3
+
+    card: Optional["Card"] = Relationship(back_populates="progress")
+    user: Optional["User"] = Relationship(back_populates="card_progress")
 
 
 class SRSCardProgress(SQLModel, table=True):
@@ -327,13 +470,16 @@ class SRSCardProgress(SQLModel, table=True):
     )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    user_id: uuid.UUID = Field(foreign_key="user.id", index=True)
-    card_id: uuid.UUID = Field(foreign_key="cards.id", index=True)
+    user_id: uuid.UUID = Field(foreign_key="user.id", index=True, ondelete="CASCADE")
+    card_id: uuid.UUID = Field(foreign_key="cards.id", index=True, ondelete="CASCADE")
     repetitions: int = Field(default=0)
     ease_factor: float = Field(default=2.5)
     interval: float = Field(default=0.0)
     due_date: str | None = Field(default=None)
     last_reviewed: str | None = Field(default=None)
+
+    card: Optional["Card"] = Relationship(back_populates="srs_progress")
+    user: Optional["User"] = Relationship(back_populates="srs_card_progress")
 
 
 class SRSDeckActivation(SQLModel, table=True):
@@ -343,9 +489,12 @@ class SRSDeckActivation(SQLModel, table=True):
     )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    user_id: uuid.UUID = Field(foreign_key="user.id", index=True)
-    deck_id: uuid.UUID = Field(foreign_key="decks.id", index=True)
+    user_id: uuid.UUID = Field(foreign_key="user.id", index=True, ondelete="CASCADE")
+    deck_id: uuid.UUID = Field(foreign_key="decks.id", index=True, ondelete="CASCADE")
     activated_at: str | None = Field(default=None)
+
+    deck: Optional["Deck"] = Relationship(back_populates="srs_activations")
+    user: Optional["User"] = Relationship(back_populates="srs_deck_activations")
 
 
 Deck.cards_count = column_property(
@@ -384,9 +533,12 @@ class DeckMatchTime(SQLModel, table=True):
     )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    user_id: uuid.UUID = Field(foreign_key="user.id", index=True)
-    deck_id: uuid.UUID = Field(foreign_key="decks.id", index=True)
+    user_id: uuid.UUID = Field(foreign_key="user.id", index=True, ondelete="CASCADE")
+    deck_id: uuid.UUID = Field(foreign_key="decks.id", index=True, ondelete="CASCADE")
     best_time_ms: int
+
+    deck: Optional["Deck"] = Relationship(back_populates="match_times")
+    user: Optional["User"] = Relationship(back_populates="deck_match_times")
 
 
 class DeckExamScore(SQLModel, table=True):
@@ -396,9 +548,12 @@ class DeckExamScore(SQLModel, table=True):
     )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    user_id: uuid.UUID = Field(foreign_key="user.id", index=True)
-    deck_id: uuid.UUID = Field(foreign_key="decks.id", index=True)
+    user_id: uuid.UUID = Field(foreign_key="user.id", index=True, ondelete="CASCADE")
+    deck_id: uuid.UUID = Field(foreign_key="decks.id", index=True, ondelete="CASCADE")
     best_score_percentage: int
+
+    deck: Optional["Deck"] = Relationship(back_populates="exam_scores")
+    user: Optional["User"] = Relationship(back_populates="deck_exam_scores")
 
 
 class UserDailyActivity(SQLModel, table=True):
@@ -408,8 +563,10 @@ class UserDailyActivity(SQLModel, table=True):
     )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    user_id: uuid.UUID = Field(foreign_key="user.id", index=True)
+    user_id: uuid.UUID = Field(foreign_key="user.id", index=True, ondelete="CASCADE")
     date: str = Field(index=True)  # Format: YYYY-MM-DD
     points: int = Field(default=0)
     activities_count: int = Field(default=0)
     details: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+
+    user: Optional["User"] = Relationship(back_populates="daily_activities")

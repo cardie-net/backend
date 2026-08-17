@@ -1380,3 +1380,69 @@ async def test_deck_timestamps(async_client: AsyncClient, guest_token: str):
     updated_data = update_res.json()
     assert updated_data["created_at"] is not None
     assert updated_data["updated_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_delete_deck_with_progress_and_metadata(
+    async_client: AsyncClient, guest_token: str
+):
+    # 1. Create deck
+    create_res = await async_client.post(
+        "/api/v1/decks",
+        json={"name": "Delete Deck With Data", "slug": "delete-deck-data"},
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert create_res.status_code == 200
+    deck_id = create_res.json()["id"]
+
+    # 2. Add card
+    card_resp = await async_client.post(
+        f"/api/v1/decks/{deck_id}/cards/",
+        json={
+            "front": [{"type": "text", "content": "Front"}],
+            "back": [{"type": "text", "content": "Back"}],
+        },
+        headers={"X-Test-Cookie": guest_token},
+    )
+    card_id = card_resp.json()["id"]
+
+    # 3. Add progress
+    await async_client.post(
+        f"/api/v1/decks/{deck_id}/progress",
+        json={"progress": [{"card_id": card_id, "box": 2}]},
+        headers={"X-Test-Cookie": guest_token},
+    )
+
+    # 4. Activate SRS & review
+    await async_client.post(
+        f"/api/v1/decks/{deck_id}/srs/activate",
+        headers={"X-Test-Cookie": guest_token},
+    )
+    await async_client.post(
+        f"/api/v1/decks/{deck_id}/srs/review",
+        json={"reviews": [{"card_id": card_id, "rating": 3}]},
+        headers={"X-Test-Cookie": guest_token},
+    )
+
+    # 5. Add match time & exam score & star
+    await async_client.put(
+        f"/api/v1/decks/{deck_id}/match-time",
+        json={"time_ms": 12000},
+        headers={"X-Test-Cookie": guest_token},
+    )
+    await async_client.put(
+        f"/api/v1/decks/{deck_id}/exam-score",
+        json={"score_percentage": 90},
+        headers={"X-Test-Cookie": guest_token},
+    )
+    await async_client.post(
+        f"/api/v1/decks/{deck_id}/star",
+        headers={"X-Test-Cookie": guest_token},
+    )
+
+    # 6. Delete deck
+    del_res = await async_client.delete(
+        f"/api/v1/decks/{deck_id}",
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert del_res.status_code == 204
