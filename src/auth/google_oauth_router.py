@@ -181,8 +181,8 @@ def create_google_oauth_router() -> APIRouter:
         # Generate JWT
         jwt_token = create_access_token(user.id)
 
-        # Redirect to frontend home page
-        response = RedirectResponse(url=_build_frontend_url("/"))
+        # Redirect to frontend decks page
+        response = RedirectResponse(url=_build_frontend_url("/decks"))
 
         # Set cookie directly
         response.set_cookie(
