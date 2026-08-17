@@ -8,6 +8,7 @@ from sqlmodel import select
 from ..models import (
     Card,
     Deck,
+    PrivacyLevel,
     SRSCardProgress,
     SRSCardProgressRead,
     SRSDeckActivation,
@@ -61,11 +62,11 @@ async def activate_srs_deck(
     db: AsyncSession, user_id: uuid.UUID, deck_id: uuid.UUID
 ) -> SRSDeckCounts | None:
     """Activate SRS for a deck."""
-    deck_result = await db.execute(
-        select(Deck).where(Deck.id == deck_id, Deck.user_id == user_id)
-    )
+    deck_result = await db.execute(select(Deck).where(Deck.id == deck_id))
     deck = deck_result.scalar_one_or_none()
     if not deck:
+        return None
+    if deck.user_id != user_id and deck.privacy == PrivacyLevel.PRIVATE:
         return None
 
     # Record deck activation
@@ -124,12 +125,14 @@ async def activate_srs_deck(
 async def get_srs_counts_for_user(
     db: AsyncSession, user_id: uuid.UUID
 ) -> Dict[uuid.UUID, SRSDeckCounts]:
-    """Get SRS counts for all decks owned by the user."""
+    """Get SRS counts for all decks owned or activated by the user."""
     today = date.today().isoformat()
 
     # Get all decks owned by user
-    decks_result = await db.execute(select(Deck.id).where(Deck.user_id == user_id))
-    deck_ids = decks_result.scalars().all()
+    owned_decks_result = await db.execute(
+        select(Deck.id).where(Deck.user_id == user_id)
+    )
+    owned_deck_ids = set(owned_decks_result.scalars().all())
 
     # Get all activated deck IDs for user
     activations_result = await db.execute(
@@ -137,9 +140,33 @@ async def get_srs_counts_for_user(
     )
     activated_deck_ids = set(activations_result.scalars().all())
 
+    # Get all deck IDs where user has SRS card progress
+    progress_decks_result = await db.execute(
+        select(Card.deck_id)
+        .join(SRSCardProgress, SRSCardProgress.card_id == Card.id)
+        .where(SRSCardProgress.user_id == user_id)
+        .distinct()
+    )
+    progress_deck_ids = set(progress_decks_result.scalars().all())
+
+    all_candidate_ids = owned_deck_ids | activated_deck_ids | progress_deck_ids
+    if not all_candidate_ids:
+        return {}
+
+    # Verify accessibility: owned by user or not private
+    decks_accessible_result = await db.execute(
+        select(Deck).where(Deck.id.in_(all_candidate_ids))
+    )
+    accessible_decks = [
+        d
+        for d in decks_accessible_result.scalars().all()
+        if d.user_id == user_id or d.privacy != PrivacyLevel.PRIVATE
+    ]
+
     counts: Dict[uuid.UUID, SRSDeckCounts] = {}
 
-    for deck_id in deck_ids:
+    for deck in accessible_decks:
+        deck_id = deck.id
         cards_result = await db.execute(select(Card.id).where(Card.deck_id == deck_id))
         card_ids = cards_result.scalars().all()
 

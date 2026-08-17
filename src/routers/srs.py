@@ -14,7 +14,13 @@ from ..crud.srs import (
     process_srs_reviews,
 )
 from ..database import get_db
-from ..models import SRSDeckCounts, SRSReviewRequest, SRSStudyResponse, User
+from ..models import (
+    PrivacyLevel,
+    SRSDeckCounts,
+    SRSReviewRequest,
+    SRSStudyResponse,
+    User,
+)
 
 router = APIRouter(tags=["srs"])
 
@@ -35,6 +41,12 @@ async def activate_srs(
     db: AsyncSession = Depends(get_db),
 ):
     """Activate SRS for a deck."""
+    deck = await get_deck(db, deck_id)
+    if not deck:
+        raise HTTPException(status_code=404, detail="Deck not found")
+    if deck.user_id != user.id and deck.privacy == PrivacyLevel.PRIVATE:
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+
     counts = await activate_srs_deck(db, user.id, deck_id)
     if counts is None:
         raise HTTPException(status_code=404, detail="Deck not found")
@@ -49,8 +61,10 @@ async def get_srs_study(
 ):
     """Fetch cards ready for SRS study."""
     deck = await get_deck(db, deck_id)
-    if not deck or deck.user_id != user.id:
+    if not deck:
         raise HTTPException(status_code=404, detail="Deck not found")
+    if deck.user_id != user.id and deck.privacy == PrivacyLevel.PRIVATE:
+        raise HTTPException(status_code=403, detail="Not enough permissions")
 
     today = date.today().isoformat()
     return await get_srs_study_cards(db, user.id, deck_id, today)
@@ -65,8 +79,10 @@ async def post_srs_review(
 ):
     """Submit batch of card ratings."""
     deck = await get_deck(db, deck_id)
-    if not deck or deck.user_id != user.id:
+    if not deck:
         raise HTTPException(status_code=404, detail="Deck not found")
+    if deck.user_id != user.id and deck.privacy == PrivacyLevel.PRIVATE:
+        raise HTTPException(status_code=403, detail="Not enough permissions")
 
     today = date.today().isoformat()
     await process_srs_reviews(db, user.id, deck_id, request.reviews, today)

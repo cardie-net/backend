@@ -156,7 +156,7 @@ async def test_srs_limits(async_client: AsyncClient, guest_token: str):
 async def test_srs_permissions(
     async_client: AsyncClient, guest_token: str, guest_token2: str
 ):
-    # User 1 creates deck
+    # User 1 creates a public deck and a card
     deck_resp = await async_client.post(
         "/api/v1/decks",
         json={"name": "User1 Deck", "slug": "user1-deck", "privacy": "public"},
@@ -164,25 +164,81 @@ async def test_srs_permissions(
     )
     deck_id = deck_resp.json()["id"]
 
-    # User 2 tries to fetch study cards
+    card_resp = await async_client.post(
+        f"/api/v1/decks/{deck_id}/cards",
+        json={
+            "front": [{"type": "text", "content": "Question"}],
+            "back": [{"type": "text", "content": "Answer"}],
+        },
+        headers={"X-Test-Cookie": guest_token},
+    )
+    card_id = card_resp.json()["id"]
+
+    # User 1 creates a private deck
+    priv_deck_resp = await async_client.post(
+        "/api/v1/decks",
+        json={"name": "User1 Private Deck", "slug": "user1-priv", "privacy": "private"},
+        headers={"X-Test-Cookie": guest_token},
+    )
+    priv_deck_id = priv_deck_resp.json()["id"]
+
+    # User 2 CAN activate SRS on User 1's public deck
+    act_resp = await async_client.post(
+        f"/api/v1/decks/{deck_id}/srs/activate", headers={"X-Test-Cookie": guest_token2}
+    )
+    assert act_resp.status_code == 200
+    assert act_resp.json()["activated"] is True
+    assert act_resp.json()["new_count"] == 1
+
+    # User 2 gets counts and sees the activated public deck
+    counts_resp = await async_client.get(
+        "/api/v1/srs/counts", headers={"X-Test-Cookie": guest_token2}
+    )
+    assert counts_resp.status_code == 200
+    assert deck_id in counts_resp.json()
+    assert counts_resp.json()[deck_id]["activated"] is True
+
+    # User 2 CAN fetch study cards on User 1's public deck
     study_resp = await async_client.get(
         f"/api/v1/decks/{deck_id}/srs/study", headers={"X-Test-Cookie": guest_token2}
     )
-    assert study_resp.status_code == 404  # Expected behavior from current srs router
+    assert study_resp.status_code == 200
+    assert len(study_resp.json()["new_cards"]) == 1
 
-    # User 2 tries to submit review
+    # User 2 CAN submit reviews on User 1's public deck
     review_resp = await async_client.post(
         f"/api/v1/decks/{deck_id}/srs/review",
+        json={"reviews": [{"card_id": card_id, "rating": 3}]},
+        headers={"X-Test-Cookie": guest_token2},
+    )
+    assert review_resp.status_code == 204
+
+    # User 1's own SRS state is unaffected (unactivated, 0 progress)
+    user1_counts = await async_client.get(
+        "/api/v1/srs/counts", headers={"X-Test-Cookie": guest_token}
+    )
+    assert user1_counts.status_code == 200
+    assert user1_counts.json()[deck_id]["activated"] is False
+
+    # User 2 CANNOT access User 1's private deck
+    priv_study_resp = await async_client.get(
+        f"/api/v1/decks/{priv_deck_id}/srs/study",
+        headers={"X-Test-Cookie": guest_token2},
+    )
+    assert priv_study_resp.status_code == 403
+
+    priv_act_resp = await async_client.post(
+        f"/api/v1/decks/{priv_deck_id}/srs/activate",
+        headers={"X-Test-Cookie": guest_token2},
+    )
+    assert priv_act_resp.status_code == 403
+
+    priv_review_resp = await async_client.post(
+        f"/api/v1/decks/{priv_deck_id}/srs/review",
         json={"reviews": []},
         headers={"X-Test-Cookie": guest_token2},
     )
-    assert review_resp.status_code == 404
-
-    # User 1 fetching should work
-    study_resp_user1 = await async_client.get(
-        f"/api/v1/decks/{deck_id}/srs/study", headers={"X-Test-Cookie": guest_token}
-    )
-    assert study_resp_user1.status_code == 200
+    assert priv_review_resp.status_code == 403
 
 
 @pytest.mark.asyncio
