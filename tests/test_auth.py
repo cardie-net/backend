@@ -1,6 +1,12 @@
+import uuid
+
 import pytest
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import select
 
+from src.auth.service import handle_oauth_callback
+from src.models import Deck, OAuthAccount, User
 from tests.conftest import extract_email_token
 
 
@@ -186,3 +192,392 @@ async def test_resend_verification(async_client: AsyncClient, mock_send_email):
     assert mock_send_email.called
     captured_token = extract_email_token(mock_send_email)
     assert captured_token is not None
+
+
+GUEST_PASSWORD = "supersecretpassword"
+
+
+@pytest.mark.asyncio
+async def test_register_upgrades_guest_keeps_data(
+    async_client: AsyncClient, mock_send_email
+):
+    # Guest session with a deck, a card and learning progress
+    guest_resp = await async_client.post("/api/v1/auth/guest")
+    assert guest_resp.status_code == 204
+    guest_cookie = guest_resp.cookies.get("cardie_session")
+    guest_headers = {"X-Test-Cookie": guest_cookie}
+
+    me_resp = await async_client.get("/api/v1/users/me", headers=guest_headers)
+    assert me_resp.json()["is_guest"] is True
+    guest_id = me_resp.json()["id"]
+
+    deck_resp = await async_client.post(
+        "/api/v1/decks",
+        json={"name": "Guest Deck", "privacy": "private"},
+        headers=guest_headers,
+    )
+    assert deck_resp.status_code == 200
+    deck_id = deck_resp.json()["id"]
+
+    card_resp = await async_client.post(
+        f"/api/v1/decks/{deck_id}/cards",
+        json={
+            "front": [{"type": "text", "content": "front"}],
+            "back": [{"type": "text", "content": "back"}],
+        },
+        headers=guest_headers,
+    )
+    assert card_resp.status_code == 200
+    card_id = card_resp.json()["id"]
+
+    progress_resp = await async_client.post(
+        f"/api/v1/decks/{deck_id}/progress",
+        json={"progress": [{"card_id": str(card_id), "box": 3}]},
+        headers=guest_headers,
+    )
+    assert progress_resp.status_code == 204
+
+    # Signing up upgrades the guest account in place
+    reg_resp = await async_client.post(
+        "/api/v1/auth/register",
+        json={"email": "upgraded@example.com", "password": GUEST_PASSWORD},
+        headers=guest_headers,
+    )
+    assert reg_resp.status_code == 201
+    data = reg_resp.json()
+    assert data["id"] == guest_id
+    assert data["is_guest"] is False
+    assert data["email"] == "upgraded@example.com"
+    assert data["is_verified"] is False
+
+    # Verification email is sent, exactly like a normal signup
+    assert mock_send_email.called
+
+    # The existing session cookie now resolves to the upgraded account
+    me_resp = await async_client.get("/api/v1/users/me", headers=guest_headers)
+    assert me_resp.json()["id"] == guest_id
+    assert me_resp.json()["is_guest"] is False
+    assert me_resp.json()["email"] == "upgraded@example.com"
+
+    # All guest data is still reachable
+    items_resp = await async_client.get(
+        f"/api/v1/users/{guest_id}/items", headers=guest_headers
+    )
+    assert items_resp.status_code == 200
+    deck_ids = [item["id"] for item in items_resp.json()]
+    assert deck_id in deck_ids
+
+    cards_resp = await async_client.get(
+        f"/api/v1/decks/{deck_id}/cards", headers=guest_headers
+    )
+    assert [c["id"] for c in cards_resp.json()] == [card_id]
+
+    progress_resp = await async_client.get(
+        f"/api/v1/decks/{deck_id}/progress", headers=guest_headers
+    )
+    assert progress_resp.json() == [{"card_id": card_id, "box": 3}]
+
+    # Login is blocked until the email is verified (verification on signup)
+    login_resp = await async_client.post(
+        "/api/v1/auth/jwt/login",
+        data={"username": "upgraded@example.com", "password": GUEST_PASSWORD},
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert login_resp.status_code == 400
+    assert login_resp.json()["detail"] == "USER_NOT_VERIFIED"
+
+
+@pytest.mark.asyncio
+async def test_register_guest_email_conflict(async_client: AsyncClient):
+    # A real account already uses this email
+    await async_client.post(
+        "/api/v1/auth/register",
+        json={"email": "taken@example.com", "password": GUEST_PASSWORD},
+    )
+
+    guest_resp = await async_client.post("/api/v1/auth/guest")
+    guest_cookie = guest_resp.cookies.get("cardie_session")
+    guest_headers = {"X-Test-Cookie": guest_cookie}
+
+    reg_resp = await async_client.post(
+        "/api/v1/auth/register",
+        json={"email": "taken@example.com", "password": GUEST_PASSWORD},
+        headers=guest_headers,
+    )
+    assert reg_resp.status_code == 400
+    assert reg_resp.json()["detail"] == "REGISTER_USER_ALREADY_EXISTS"
+
+    # Guest account is unchanged
+    me_resp = await async_client.get("/api/v1/users/me", headers=guest_headers)
+    assert me_resp.json()["is_guest"] is True
+    assert me_resp.json()["email"].startswith("guest_")
+
+
+@pytest.mark.asyncio
+async def test_register_guest_username_conflict(async_client: AsyncClient):
+    await async_client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "owner@example.com",
+            "password": GUEST_PASSWORD,
+            "username": "takenusername",
+        },
+    )
+
+    guest_resp = await async_client.post("/api/v1/auth/guest")
+    guest_cookie = guest_resp.cookies.get("cardie_session")
+    guest_headers = {"X-Test-Cookie": guest_cookie}
+
+    reg_resp = await async_client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "new@example.com",
+            "password": GUEST_PASSWORD,
+            "username": "takenusername",
+        },
+        headers=guest_headers,
+    )
+    assert reg_resp.status_code == 400
+    assert reg_resp.json()["detail"] == "REGISTER_USER_ALREADY_EXISTS"
+
+    me_resp = await async_client.get("/api/v1/users/me", headers=guest_headers)
+    assert me_resp.json()["is_guest"] is True
+
+
+@pytest.mark.asyncio
+async def test_register_without_guest_session_creates_new_account(
+    async_client: AsyncClient,
+):
+    response = await async_client.post(
+        "/api/v1/auth/register",
+        json={"email": "fresh@example.com", "password": GUEST_PASSWORD},
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["is_guest"] is False
+    assert data["email"] == "fresh@example.com"
+    assert data["is_verified"] is False
+
+
+@pytest.mark.asyncio
+async def test_login_discards_guest_data(
+    async_client: AsyncClient, async_session: AsyncSession, mock_send_email
+):
+    # Real account (registered + verified)
+    await async_client.post(
+        "/api/v1/auth/register",
+        json={"email": "real@example.com", "password": GUEST_PASSWORD},
+    )
+    captured_token = extract_email_token(mock_send_email)
+    await async_client.post("/api/v1/auth/verify", json={"token": captured_token})
+
+    # Guest session with data on the same client
+    guest_resp = await async_client.post("/api/v1/auth/guest")
+    guest_cookie = guest_resp.cookies.get("cardie_session")
+    guest_headers = {"X-Test-Cookie": guest_cookie}
+    me_resp = await async_client.get("/api/v1/users/me", headers=guest_headers)
+    guest_id = uuid.UUID(me_resp.json()["id"])
+
+    deck_resp = await async_client.post(
+        "/api/v1/decks",
+        json={"name": "Guest Deck", "privacy": "private"},
+        headers=guest_headers,
+    )
+    assert deck_resp.status_code == 200
+    deck_id = uuid.UUID(deck_resp.json()["id"])
+
+    # Logging in while the guest session cookie is present discards the guest
+    login_resp = await async_client.post(
+        "/api/v1/auth/jwt/login",
+        data={"username": "real@example.com", "password": GUEST_PASSWORD},
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert login_resp.status_code == 204
+
+    # Guest account and all its data are gone (no merging)
+    result = await async_session.execute(
+        select(User)
+        .where(User.id == guest_id)
+        .execution_options(populate_existing=True)
+    )
+    assert result.scalars().first() is None
+    deck_result = await async_session.execute(
+        select(Deck).where(Deck.id == deck_id).execution_options(populate_existing=True)
+    )
+    assert deck_result.scalars().first() is None
+
+    # The real account is untouched and now owns the session
+    me_resp = await async_client.get("/api/v1/users/me")
+    assert me_resp.json()["email"] == "real@example.com"
+    assert me_resp.json()["is_guest"] is False
+
+
+@pytest.mark.asyncio
+async def test_failed_login_preserves_guest(
+    async_client: AsyncClient, async_session: AsyncSession
+):
+    guest_resp = await async_client.post("/api/v1/auth/guest")
+    guest_cookie = guest_resp.cookies.get("cardie_session")
+    guest_headers = {"X-Test-Cookie": guest_cookie}
+    me_resp = await async_client.get("/api/v1/users/me", headers=guest_headers)
+    guest_id = uuid.UUID(me_resp.json()["id"])
+
+    login_resp = await async_client.post(
+        "/api/v1/auth/jwt/login",
+        data={"username": "nobody@example.com", "password": "wrongpassword1"},
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert login_resp.status_code == 400
+
+    # Guest still exists after a failed login
+    result = await async_session.execute(
+        select(User)
+        .where(User.id == guest_id)
+        .execution_options(populate_existing=True)
+    )
+    assert result.scalars().first() is not None
+
+
+@pytest.mark.asyncio
+async def test_oauth_callback_upgrades_guest(async_session: AsyncSession):
+    guest = User(
+        email="oauthguest@guest.example.com",
+        hashed_password="unused",
+        username="oauthguestone",
+        display_name="oauthguestone",
+        is_guest=True,
+    )
+    async_session.add(guest)
+    await async_session.commit()
+    await async_session.refresh(guest)
+    guest_id = guest.id
+
+    user = await handle_oauth_callback(
+        db=async_session,
+        oauth_name="google",
+        access_token="token1",
+        account_id="google-id-1",
+        account_email="oauth.upgraded@gmail.com",
+        guest_user=guest,
+    )
+    assert user.id == guest_id
+    assert user.is_guest is False
+    assert user.is_verified is True
+    assert user.email == "oauth.upgraded@gmail.com"
+
+    oauth = (
+        await async_session.execute(
+            select(OAuthAccount).where(OAuthAccount.account_id == "google-id-1")
+        )
+    ).scalar_one()
+    assert oauth.user_id == guest_id
+    assert oauth.account_email == "oauth.upgraded@gmail.com"
+
+
+@pytest.mark.asyncio
+async def test_oauth_callback_existing_account_discards_guest(
+    async_session: AsyncSession,
+):
+    real = User(
+        email="real.google@gmail.com",
+        hashed_password="unused",
+        username="realgoogleuser",
+        display_name="realgoogleuser",
+        is_guest=False,
+        is_verified=True,
+    )
+    async_session.add(real)
+    await async_session.commit()
+    await async_session.refresh(real)
+    real_id = real.id
+
+    async_session.add(
+        OAuthAccount(
+            oauth_name="google",
+            access_token="existing-token",
+            account_id="google-id-2",
+            account_email="real.google@gmail.com",
+            user_id=real_id,
+        )
+    )
+    guest = User(
+        email="oauthguest2@guest.example.com",
+        hashed_password="unused",
+        username="oauthguesttwo",
+        display_name="oauthguesttwo",
+        is_guest=True,
+    )
+    async_session.add(guest)
+    await async_session.commit()
+    await async_session.refresh(guest)
+    guest_id = guest.id
+
+    user = await handle_oauth_callback(
+        db=async_session,
+        oauth_name="google",
+        access_token="new-token",
+        account_id="google-id-2",
+        account_email="real.google@gmail.com",
+        guest_user=guest,
+    )
+    assert user.id == real_id
+    result = await async_session.execute(
+        select(User)
+        .where(User.id == guest_id)
+        .execution_options(populate_existing=True)
+    )
+    assert result.scalars().first() is None
+
+
+@pytest.mark.asyncio
+async def test_oauth_callback_existing_email_signs_in_and_discards_guest(
+    async_session: AsyncSession,
+):
+    real = User(
+        email="owner@gmail.com",
+        hashed_password="unused",
+        username="ownergoogleuser",
+        display_name="ownergoogleuser",
+        is_guest=False,
+        is_verified=True,
+    )
+    async_session.add(real)
+    await async_session.commit()
+    await async_session.refresh(real)
+    real_id = real.id
+
+    guest = User(
+        email="oauthguest3@guest.example.com",
+        hashed_password="unused",
+        username="oauthguestthree",
+        display_name="oauthguestthree",
+        is_guest=True,
+    )
+    async_session.add(guest)
+    await async_session.commit()
+    await async_session.refresh(guest)
+    guest_id = guest.id
+
+    user = await handle_oauth_callback(
+        db=async_session,
+        oauth_name="google",
+        access_token="token3",
+        account_id="google-id-3",
+        account_email="owner@gmail.com",
+        guest_user=guest,
+    )
+    assert user.id == real_id
+    # OAuth identity is linked to the existing account...
+    oauth = (
+        await async_session.execute(
+            select(OAuthAccount).where(OAuthAccount.account_id == "google-id-3")
+        )
+    ).scalar_one()
+    assert oauth.user_id == real_id
+    # ...and the guest session is discarded, not merged
+    result = await async_session.execute(
+        select(User)
+        .where(User.id == guest_id)
+        .execution_options(populate_existing=True)
+    )
+    assert result.scalars().first() is None

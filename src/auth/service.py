@@ -129,6 +129,59 @@ async def create_user(db: AsyncSession, user_create: UserCreate) -> User:
     return db_user
 
 
+async def _apply_guest_upgrade(
+    db: AsyncSession,
+    guest_user: User,
+    email: str,
+    password: str,
+    username: str | None,
+    is_verified: bool,
+) -> User:
+    """Set account fields on a guest user without committing."""
+    if username:
+        if is_reserved_username(username):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="USERNAME_RESERVED",
+            )
+    else:
+        username = await generate_unique_username(db, email)
+
+    guest_user.email = email
+    guest_user.hashed_password = get_password_hash(password)
+    guest_user.username = username
+    guest_user.display_name = username
+    guest_user.is_guest = False
+    guest_user.is_verified = is_verified
+    guest_user.email_verification_token = None
+    guest_user.reset_password_token = None
+
+    db.add(guest_user)
+    return guest_user
+
+
+async def upgrade_guest_user(
+    db: AsyncSession,
+    guest_user: User,
+    email: str,
+    password: str,
+    username: str | None = None,
+) -> User:
+    """Convert a guest account into a regular account in place.
+
+    The guest's user_id is preserved so all owned data (decks, folders,
+    learning progress, stars, activity) stays attached to the account.
+    """
+    await _apply_guest_upgrade(db, guest_user, email, password, username, False)
+    await db.commit()
+    await db.refresh(guest_user)
+
+    if not guest_user.is_verified:
+        await request_verification(db, guest_user)
+
+    return guest_user
+
+
 async def handle_oauth_callback(
     db: AsyncSession,
     oauth_name: str,
@@ -137,8 +190,17 @@ async def handle_oauth_callback(
     account_email: str,
     expires_at: int | None = None,
     refresh_token: str | None = None,
+    guest_user: User | None = None,
 ) -> User:
-    """Process OAuth callback, linking or creating the user account."""
+    """Process OAuth callback, linking or creating the user account.
+
+    A guest session is the account being signed up/in: a new Google identity
+    upgrades the guest in place; an existing Google identity (or existing
+    email) signs the guest into that account and discards the guest account.
+    Guest data is never merged.
+    """
+    is_guest_session = guest_user is not None and guest_user.is_guest
+
     # First, try to find user by oauth account
     stmt = select(OAuthAccount).where(
         OAuthAccount.oauth_name == oauth_name, OAuthAccount.account_id == account_id
@@ -158,6 +220,9 @@ async def handle_oauth_callback(
         if user:
             user.last_active_at = datetime.now(timezone.utc)
             db.add(user)
+        # Only discard the guest when signing into a distinct, existing account.
+        if is_guest_session and user is not None and oauth_acc.user_id != guest_user.id:
+            await db.delete(guest_user)
         await db.commit()
         return user
 
@@ -166,24 +231,37 @@ async def handle_oauth_callback(
     user = (await db.execute(user_stmt)).unique().scalar_one_or_none()
 
     if not user:
-        # Create new user
-        # Note: OAuth users do not have a standard password, we use a random string
-        # Since we use passlib, we can just hash a random password
-        random_password = "".join(
-            random.choices(string.ascii_letters + string.digits, k=32)
-        )
-        hashed_password = get_password_hash(random_password)
-        username = await generate_unique_username(db, account_email)
+        if is_guest_session:
+            # Google sign-up from a guest session upgrades the guest in place
+            # (single transaction with the OAuthAccount link below).
+            random_password = "".join(
+                random.choices(string.ascii_letters + string.digits, k=32)
+            )
+            user = await _apply_guest_upgrade(
+                db, guest_user, account_email, random_password, None, True
+            )
+        else:
+            # Create new user
+            # Note: OAuth users do not have a standard password, we use a random string
+            # Since we use passlib, we can just hash a random password
+            random_password = "".join(
+                random.choices(string.ascii_letters + string.digits, k=32)
+            )
+            hashed_password = get_password_hash(random_password)
+            username = await generate_unique_username(db, account_email)
 
-        user = User(
-            email=account_email,
-            hashed_password=hashed_password,
-            username=username,
-            display_name=username,
-            is_verified=True,  # Trust Google
-        )
-        db.add(user)
+            user = User(
+                email=account_email,
+                hashed_password=hashed_password,
+                username=username,
+                display_name=username,
+                is_verified=True,  # Trust Google
+            )
+            db.add(user)
         await db.flush()  # To get user.id for OAuthAccount
+    elif is_guest_session:
+        # Existing account: this is a sign-in, discard the guest session.
+        await db.delete(guest_user)
 
     # Add OAuth account
     new_oauth = OAuthAccount(

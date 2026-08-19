@@ -20,9 +20,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import settings
 from ..database import get_db
+from ..models import User
 from .oauth import google_oauth_client
 from .service import handle_oauth_callback
-from .utils import COOKIE_NAME, create_access_token
+from .utils import COOKIE_NAME, create_access_token, get_optional_current_user
 
 STATE_TOKEN_AUDIENCE = "fastapi-users:oauth-state"
 CSRF_TOKEN_KEY = "csrftoken"
@@ -97,6 +98,7 @@ def create_google_oauth_router() -> APIRouter:
             oauth2_authorize_callback
         ),
         db: AsyncSession = Depends(get_db),
+        guest_user: User | None = Depends(get_optional_current_user),
     ) -> RedirectResponse:
         """Handle Google's OAuth callback and redirect to the frontend with a JWT."""
         token, state = access_token_state
@@ -156,7 +158,7 @@ def create_google_oauth_router() -> APIRouter:
                 url=_build_frontend_url("/login", {"error": "oauth_no_email"})
             )
 
-        # Create or retrieve user via service
+        # Create, upgrade, or retrieve user via service
         try:
             user = await handle_oauth_callback(
                 db=db,
@@ -166,6 +168,7 @@ def create_google_oauth_router() -> APIRouter:
                 account_email=account_email,
                 expires_at=token.get("expires_at"),
                 refresh_token=token.get("refresh_token"),
+                guest_user=guest_user,
             )
         except Exception as e:
             logger.error("OAuth callback failed: %s", e)

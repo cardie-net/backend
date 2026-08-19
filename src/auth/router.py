@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
+import sqlalchemy.exc
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr
@@ -16,11 +17,13 @@ from .service import (
     request_verification,
     reset_password,
     send_forgot_password_email,
+    upgrade_guest_user,
 )
 from .utils import (
     COOKIE_NAME,
     create_access_token,
     current_active_user,
+    get_optional_current_user,
     get_password_hash,
     verify_password,
 )
@@ -61,8 +64,13 @@ def create_auth_router() -> APIRouter:
         response: Response,
         credentials: OAuth2PasswordRequestForm = Depends(),
         db: AsyncSession = Depends(get_db),
+        guest_user: User | None = Depends(get_optional_current_user),
     ) -> None:
-        """Authenticate a user and set a session cookie."""
+        """Authenticate a user and set a session cookie.
+
+        Everyone starts as a guest; logging into a real account discards the
+        guest session and all its data (no merging).
+        """
         stmt = select(User).where(User.email == credentials.username)
         user = (await db.execute(stmt)).unique().scalar_one_or_none()
 
@@ -73,12 +81,16 @@ def create_auth_router() -> APIRouter:
         if not user.is_verified:
             raise HTTPException(status_code=400, detail="USER_NOT_VERIFIED")
 
+        # A successful login replaces the guest session: discard the guest
+        # account (cascading deletes remove its decks, progress, stars, etc.).
+        if guest_user is not None and guest_user.is_guest:
+            await db.delete(guest_user)
+
         user.last_active_at = datetime.now(timezone.utc)
         db.add(user)
         await db.commit()
 
         access_token = create_access_token(user.id)
-        # We return 204 typically or we can return 200 with JSON if swagger needs it, but the tests check for 204 for login success or 200 depending. Wait, the old login returned 204 and set a cookie. Actually, fastapi-users returns JSON with access_token. But wait, in test_auth.py test_login_verified_user it checks `assert response.status_code == 204` and `assert "cardie_session" in response.cookies`. So it returned 204.
         response.status_code = status.HTTP_204_NO_CONTENT
         response.set_cookie(
             COOKIE_NAME,
@@ -99,13 +111,47 @@ def create_auth_router() -> APIRouter:
 
     @router.post("/register", response_model=UserRead, status_code=201, tags=["auth"])
     async def register(
-        user_create: UserCreate, db: AsyncSession = Depends(get_db)
+        user_create: UserCreate,
+        db: AsyncSession = Depends(get_db),
+        guest_user: User | None = Depends(get_optional_current_user),
     ) -> UserRead:
-        """Register a new user account."""
+        """Register a new user account.
+
+        Everyone starts as a guest, so signing up upgrades the current guest
+        account in place (keeping all its data) instead of creating a new one.
+        """
+        upgrading_guest = guest_user is not None and guest_user.is_guest
+
         stmt = select(User).where(User.email == user_create.email)
         existing = (await db.execute(stmt)).unique().scalar_one_or_none()
-        if existing:
+        if existing and not (upgrading_guest and existing.id == guest_user.id):
             raise HTTPException(status_code=400, detail="REGISTER_USER_ALREADY_EXISTS")
+
+        if upgrading_guest:
+            if user_create.username:
+                username_stmt = select(User).where(
+                    User.username == user_create.username, User.id != guest_user.id
+                )
+                username_existing = (
+                    (await db.execute(username_stmt)).unique().scalar_one_or_none()
+                )
+                if username_existing:
+                    raise HTTPException(
+                        status_code=400, detail="REGISTER_USER_ALREADY_EXISTS"
+                    )
+            try:
+                return await upgrade_guest_user(
+                    db,
+                    guest_user,
+                    user_create.email,
+                    user_create.password,
+                    user_create.username,
+                )
+            except sqlalchemy.exc.IntegrityError:
+                await db.rollback()
+                raise HTTPException(
+                    status_code=400, detail="REGISTER_USER_ALREADY_EXISTS"
+                )
 
         if user_create.username:
             username_stmt = select(User).where(User.username == user_create.username)
@@ -117,7 +163,11 @@ def create_auth_router() -> APIRouter:
                     status_code=400, detail="REGISTER_USER_ALREADY_EXISTS"
                 )
 
-        return await create_user(db, user_create)
+        try:
+            return await create_user(db, user_create)
+        except sqlalchemy.exc.IntegrityError:
+            await db.rollback()
+            raise HTTPException(status_code=400, detail="REGISTER_USER_ALREADY_EXISTS")
 
     @router.post("/forgot-password", status_code=202, tags=["auth"])
     async def forgot_password(
