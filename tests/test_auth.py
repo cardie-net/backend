@@ -1,10 +1,12 @@
 import uuid
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
+from src.auth import google_oauth_router
 from src.auth.service import handle_oauth_callback
 from src.models import Deck, OAuthAccount, User
 from tests.conftest import extract_email_token
@@ -581,3 +583,54 @@ async def test_oauth_callback_existing_email_signs_in_and_discards_guest(
         .execution_options(populate_existing=True)
     )
     assert result.scalars().first() is None
+
+
+# --- Google OAuth redirect_uri construction ---
+
+
+def _redirect_uri_from(response) -> str:
+    query = parse_qs(urlparse(response.headers["location"]).query)
+    return query["redirect_uri"][0]
+
+
+@pytest.mark.asyncio
+async def test_oauth_authorize_uses_request_scheme_by_default(
+    async_client: AsyncClient, monkeypatch
+):
+    """Without PUBLIC_BACKEND_URL the callback URL is derived from the request."""
+    monkeypatch.setattr(google_oauth_router.settings, "PUBLIC_BACKEND_URL", "")
+    response = await async_client.get(
+        "/api/v1/auth/google/authorize", follow_redirects=False
+    )
+    assert response.status_code == 307
+    assert _redirect_uri_from(response) == "http://test/api/v1/auth/google/callback"
+
+
+@pytest.mark.asyncio
+async def test_oauth_authorize_uses_public_backend_url(
+    async_client: AsyncClient, monkeypatch
+):
+    """PUBLIC_BACKEND_URL overrides scheme/host (e.g. behind a reverse proxy)."""
+    monkeypatch.setattr(
+        google_oauth_router.settings, "PUBLIC_BACKEND_URL", "https://cardie.net"
+    )
+    response = await async_client.get(
+        "/api/v1/auth/google/authorize", follow_redirects=False
+    )
+    assert response.status_code == 307
+    assert (
+        _redirect_uri_from(response) == "https://cardie.net/api/v1/auth/google/callback"
+    )
+
+
+@pytest.mark.asyncio
+async def test_oauth_authorize_cookie_secure_flag(
+    async_client: AsyncClient, monkeypatch
+):
+    """The CSRF cookie carries the Secure flag when COOKIE_SECURE is enabled."""
+    monkeypatch.setattr(google_oauth_router.settings, "COOKIE_SECURE", True)
+    response = await async_client.get(
+        "/api/v1/auth/google/authorize", follow_redirects=False
+    )
+    assert response.status_code == 307
+    assert "Secure" in response.headers["set-cookie"]

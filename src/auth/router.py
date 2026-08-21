@@ -8,6 +8,7 @@ from pydantic import BaseModel, EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
+from ..config import settings
 from ..database import get_db
 from ..models import User, UserCreate, UserRead
 from .google_oauth_router import create_google_oauth_router
@@ -98,7 +99,7 @@ def create_auth_router() -> APIRouter:
             max_age=3600 * 24 * 7,
             httponly=True,
             samesite="lax",
-            secure=False,  # Should be set via settings, hardcoding for now
+            secure=settings.COOKIE_SECURE,
         )
         return
 
@@ -247,7 +248,7 @@ def create_auth_router() -> APIRouter:
             max_age=3600 * 24 * 7,
             httponly=True,
             samesite="lax",
-            secure=False,
+            secure=settings.COOKIE_SECURE,
         )
         return
 

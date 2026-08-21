@@ -24,6 +24,14 @@ class Settings(BaseSettings):
     SMTP_TIMEOUT: int = 5
     FRONTEND_URL: str = "http://localhost:3000"
 
+    # Public base URL of this API, e.g. "https://cardie.net". Set it when the
+    # backend runs behind a TLS-terminating reverse proxy: it is used to build
+    # absolute URLs (Google OAuth redirect_uri) with the correct external
+    # scheme/host instead of whatever the backend sees internally.
+    PUBLIC_BACKEND_URL: str = ""
+    # Set True in production (HTTPS) so session cookies carry the Secure flag.
+    COOKIE_SECURE: bool = False
+
     # AWS S3 Settings
     AWS_ACCESS_KEY_ID: str = ""
     AWS_SECRET_ACCESS_KEY: str = ""

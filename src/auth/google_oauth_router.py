@@ -52,14 +52,43 @@ def _build_frontend_url(path: str, params: dict[str, str] | None = None) -> str:
     return url
 
 
+def _public_callback_url(request: Request) -> str:
+    """The callback URL that Google must redirect the browser to.
+
+    When PUBLIC_BACKEND_URL is set (backend behind a TLS-terminating reverse
+    proxy), use it as the scheme/host and only take the path from the request,
+    since the backend may otherwise see "http" / an internal host. Otherwise
+    fall back to the request-derived URL, which is correct for direct access.
+    """
+    if settings.PUBLIC_BACKEND_URL:
+        path = request.url_for(CALLBACK_ROUTE_NAME).path
+        return f"{settings.PUBLIC_BACKEND_URL.rstrip('/')}{path}"
+    return str(request.url_for(CALLBACK_ROUTE_NAME))
+
+
+async def oauth2_authorize_callback(
+    request: Request,
+    code: str | None = None,
+    code_verifier: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+) -> tuple[OAuth2Token, str | None]:
+    """Dependency that exchanges the Google authorization code for a token.
+
+    Wraps httpx_oauth's OAuth2AuthorizeCallback with an explicit redirect_url so
+    the token exchange uses the same public URL that Google validated during
+    authorization (Google re-checks redirect_uri on the token endpoint).
+    """
+    callback = OAuth2AuthorizeCallback(
+        google_oauth_client,
+        redirect_url=_public_callback_url(request),
+    )
+    return await callback(request, code, code_verifier, state, error)
+
+
 def create_google_oauth_router() -> APIRouter:
     """Create a Google OAuth router with frontend redirect callbacks."""
     router = APIRouter()
-
-    oauth2_authorize_callback = OAuth2AuthorizeCallback(
-        google_oauth_client,
-        route_name=CALLBACK_ROUTE_NAME,
-    )
 
     @router.get("/authorize")
     async def authorize(
@@ -67,7 +96,7 @@ def create_google_oauth_router() -> APIRouter:
         scopes: list[str] = Query(None),
     ) -> RedirectResponse:
         """Redirect the browser directly to Google's consent screen."""
-        callback_url = str(request.url_for(CALLBACK_ROUTE_NAME))
+        callback_url = _public_callback_url(request)
 
         csrf_token = _generate_csrf_token()
         state_data: dict[str, str] = {CSRF_TOKEN_KEY: csrf_token}
@@ -85,7 +114,7 @@ def create_google_oauth_router() -> APIRouter:
             csrf_token,
             max_age=3600,
             path="/",
-            secure=False,  # Set True in production with HTTPS
+            secure=settings.COOKIE_SECURE,
             httponly=True,
             samesite="lax",
         )
@@ -194,7 +223,7 @@ def create_google_oauth_router() -> APIRouter:
             max_age=3600 * 24 * 7,
             httponly=True,
             samesite="lax",
-            secure=False,
+            secure=settings.COOKIE_SECURE,
         )
 
         # Clean up the CSRF cookie
