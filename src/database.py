@@ -1,10 +1,12 @@
+import uuid
 from typing import AsyncGenerator
 
-from sqlalchemy import event, text
+from sqlalchemy import event, insert, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlmodel import SQLModel
+from sqlmodel import SQLModel, select
 
 from src.config import settings
+from src.models.tables import PendingRegistration, User
 
 DATABASE_URL = settings.DATABASE_URL
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
@@ -86,12 +88,73 @@ async def _ensure_postgres_foreign_key_cascades(conn) -> None:
                 )
 
 
+async def _migrate_legacy_unverified_users(session: AsyncSession) -> None:
+    """Move legacy unverified accounts back to guest status.
+
+    Older versions promoted the guest row at signup and left it unverified
+    until the email was confirmed. Those rows are converted to the deferred
+    model: credentials go into pending_registrations (keeping the original
+    verification token so old emailed links still work) and the user row is
+    reverted to guest boilerplate. Idempotent: only touches non-guest,
+    unverified users, which can no longer be created.
+    """
+    result = await session.execute(
+        select(
+            User.id,
+            User.email,
+            User.hashed_password,
+            User.username,
+            User.display_name,
+            User.email_verification_token,
+        ).where(
+            User.is_guest == False, User.is_verified == False
+        )  # noqa: E712
+    )
+    legacy_rows = result.all()
+
+    from .auth.utils import get_password_hash  # lazy: avoids circular import
+
+    def _as_uuid(value) -> uuid.UUID:
+        return value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
+
+    for row in legacy_rows:
+        session.add(
+            PendingRegistration(
+                email=row.email,
+                hashed_password=row.hashed_password,
+                username=row.username,
+                display_name=row.display_name,
+                email_verification_token=row.email_verification_token
+                or uuid.uuid4().hex[:10],
+                guest_user_id=_as_uuid(row.id),
+            )
+        )
+
+    for row in legacy_rows:
+        guest_id = uuid.uuid4().hex[:20]
+        await session.execute(
+            update(User)
+            .where(User.id == _as_uuid(row.id))
+            .values(
+                email=f"guest_{guest_id}@guest.example.com",
+                hashed_password=get_password_hash(uuid.uuid4().hex),
+                is_guest=True,
+                email_verification_token=None,
+            )
+        )
+    if legacy_rows:
+        await session.commit()
+
+
 async def create_db_and_tables() -> None:
     """Create all configured database tables."""
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
         if conn.dialect.name == "postgresql":
             await _ensure_postgres_foreign_key_cascades(conn)
+
+    async with async_session_maker() as session:
+        await _migrate_legacy_unverified_users(session)
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:

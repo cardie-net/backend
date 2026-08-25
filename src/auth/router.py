@@ -10,15 +10,16 @@ from sqlmodel import select
 
 from ..config import settings
 from ..database import get_db
-from ..models import User, UserCreate, UserRead
+from ..models import PendingRegistration, User, UserCreate, UserRead
 from .google_oauth_router import create_google_oauth_router
 from .service import (
     create_user,
     generate_reset_token,
-    request_verification,
+    promote_guest_by_token,
     reset_password,
     send_forgot_password_email,
-    upgrade_guest_user,
+    send_verification_email,
+    stage_pending_registration,
 )
 from .utils import (
     COOKIE_NAME,
@@ -79,11 +80,11 @@ def create_auth_router() -> APIRouter:
             raise HTTPException(status_code=400, detail="LOGIN_BAD_CREDENTIALS")
         if not verify_password(credentials.password, user.hashed_password):
             raise HTTPException(status_code=400, detail="LOGIN_BAD_CREDENTIALS")
-        if not user.is_verified:
-            raise HTTPException(status_code=400, detail="USER_NOT_VERIFIED")
 
         # A successful login replaces the guest session: discard the guest
         # account (cascading deletes remove its decks, progress, stars, etc.).
+        # Note: any pending registration pointing at this guest is discarded
+        # with it, matching the "guest data is never merged" rule.
         if guest_user is not None and guest_user.is_guest:
             await db.delete(guest_user)
 
@@ -110,65 +111,47 @@ def create_auth_router() -> APIRouter:
         response.delete_cookie(COOKIE_NAME)
         return
 
-    @router.post("/register", response_model=UserRead, status_code=201, tags=["auth"])
+    @router.post("/register", status_code=202, tags=["auth"])
     async def register(
         user_create: UserCreate,
         db: AsyncSession = Depends(get_db),
         guest_user: User | None = Depends(get_optional_current_user),
-    ) -> UserRead:
-        """Register a new user account.
+    ) -> dict[str, str]:
+        """Stage a pending registration and email a verification token.
 
-        Everyone starts as a guest, so signing up upgrades the current guest
-        account in place (keeping all its data) instead of creating a new one.
+        Signing up never changes the current account: the guest keeps using
+        the site with full access while the email verification is pending.
+        The account is promoted only after verification (deferred promotion).
         """
-        upgrading_guest = guest_user is not None and guest_user.is_guest
-
-        stmt = select(User).where(User.email == user_create.email)
-        existing = (await db.execute(stmt)).unique().scalar_one_or_none()
-        if existing and not (upgrading_guest and existing.id == guest_user.id):
-            raise HTTPException(status_code=400, detail="REGISTER_USER_ALREADY_EXISTS")
-
-        if upgrading_guest:
-            if user_create.username:
-                username_stmt = select(User).where(
-                    User.username == user_create.username, User.id != guest_user.id
-                )
-                username_existing = (
-                    (await db.execute(username_stmt)).unique().scalar_one_or_none()
-                )
-                if username_existing:
-                    raise HTTPException(
-                        status_code=400, detail="REGISTER_USER_ALREADY_EXISTS"
-                    )
-            try:
-                return await upgrade_guest_user(
-                    db,
-                    guest_user,
-                    user_create.email,
-                    user_create.password,
-                    user_create.username,
-                )
-            except sqlalchemy.exc.IntegrityError:
-                await db.rollback()
-                raise HTTPException(
-                    status_code=400, detail="REGISTER_USER_ALREADY_EXISTS"
-                )
-
-        if user_create.username:
-            username_stmt = select(User).where(User.username == user_create.username)
-            username_existing = (
-                (await db.execute(username_stmt)).unique().scalar_one_or_none()
-            )
-            if username_existing:
-                raise HTTPException(
-                    status_code=400, detail="REGISTER_USER_ALREADY_EXISTS"
-                )
+        if guest_user is not None and not guest_user.is_guest:
+            raise HTTPException(status_code=400, detail="REGISTER_ALREADY_REAL_ACCOUNT")
 
         try:
-            return await create_user(db, user_create)
+            await stage_pending_registration(
+                db,
+                guest_user,
+                user_create.email,
+                user_create.password,
+                user_create.username,
+            )
         except sqlalchemy.exc.IntegrityError:
             await db.rollback()
             raise HTTPException(status_code=400, detail="REGISTER_USER_ALREADY_EXISTS")
+
+        await send_verification_email(
+            user_create.email,
+            (
+                await db.execute(
+                    select(PendingRegistration).where(
+                        PendingRegistration.email == user_create.email
+                    )
+                )
+            )
+            .unique()
+            .scalar_one()
+            .email_verification_token,
+        )
+        return {"msg": "Verification email sent"}
 
     @router.post("/forgot-password", status_code=202, tags=["auth"])
     async def forgot_password(
@@ -196,32 +179,35 @@ def create_auth_router() -> APIRouter:
     async def request_verify_token(
         req: RequestVerifyEmailRequest, db: AsyncSession = Depends(get_db)
     ) -> dict[str, str]:
-        """Send an email verification link to a user."""
-        stmt = select(User).where(User.email == req.email)
-        user = (await db.execute(stmt)).unique().scalar_one_or_none()
-        if user and not user.is_verified and user.is_active:
-            await request_verification(db, user)
+        """Re-send the verification email for a staged registration."""
+        stmt = select(PendingRegistration).where(PendingRegistration.email == req.email)
+        pending = (await db.execute(stmt)).unique().scalar_one_or_none()
+        if pending:
+            await send_verification_email(
+                pending.email, pending.email_verification_token
+            )
         return {
             "msg": "If the email is valid and unverified, a verification link was sent."
         }
 
     @router.post("/verify", response_model=UserRead, tags=["auth"])
     async def verify(
-        req: VerifyEmailRequest, db: AsyncSession = Depends(get_db)
+        req: VerifyEmailRequest,
+        db: AsyncSession = Depends(get_db),
     ) -> User:
-        """Verify a user's email address using a valid token."""
-        stmt = select(User).where(User.email_verification_token == req.token)
-        user = (await db.execute(stmt)).unique().scalar_one_or_none()
+        """Verify the email of a pending registration.
+
+        Promotes the linked guest account in place: same user id, so all
+        guest data carries over and any live session keeps working.
+        """
+        try:
+            user = await promote_guest_by_token(db, req.token)
+        except HTTPException as exc:
+            if exc.detail == "REGISTER_USER_ALREADY_EXISTS":
+                raise HTTPException(status_code=400, detail="VERIFY_USER_EMAIL_TAKEN")
+            raise
         if not user:
             raise HTTPException(status_code=400, detail="VERIFY_USER_BAD_TOKEN")
-        if user.is_verified:
-            raise HTTPException(status_code=400, detail="VERIFY_USER_ALREADY_VERIFIED")
-
-        user.is_verified = True
-        user.email_verification_token = None
-        db.add(user)
-        await db.commit()
-        await db.refresh(user)
         return user
 
     @router.post("/guest", tags=["auth"])

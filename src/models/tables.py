@@ -67,6 +67,37 @@ class OAuthAccount(SQLModel, table=True):
     user: "User" = Relationship(back_populates="oauth_accounts")
 
 
+# --- Pending Registration ---
+
+
+class PendingRegistration(SQLModel, table=True):
+    """Credentials staged for a guest account until the email is verified.
+
+    Signing up never mutates the guest user row: credentials live here and
+    the account is promoted in place only after email verification.
+    """
+
+    __tablename__ = "pending_registrations"
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    email: str = Field(unique=True, index=True)
+    hashed_password: str
+    username: str | None = Field(default=None, max_length=32)
+    display_name: str | None = Field(default=None, max_length=80)
+    email_verification_token: str = Field(index=True, unique=True)
+    guest_user_id: uuid.UUID = Field(
+        foreign_key="user.id", index=True, ondelete="CASCADE"
+    )
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(
+            UTCDateTime,
+            nullable=False,
+            default=lambda: datetime.now(timezone.utc),
+        ),
+    )
+
+
 # --- User DB Model ---
 
 

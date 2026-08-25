@@ -10,7 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from ..config import settings
-from ..models import OAuthAccount, User, UserCreate, is_reserved_username
+from ..models import (
+    OAuthAccount,
+    PendingRegistration,
+    User,
+    UserCreate,
+    is_reserved_username,
+)
 from ..services.email import send_email
 from .utils import get_password_hash
 
@@ -42,6 +48,14 @@ async def generate_unique_username(db: AsyncSession, email: str) -> str:
     existing_users = results.unique().scalars().all()
     existing_usernames = {u.username for u in existing_users}
 
+    # Usernames staged in pending registrations count as taken too
+    pending_stmt = select(PendingRegistration).where(
+        PendingRegistration.username.like(f"{base_username}%")
+    )
+    pending_results = await db.execute(pending_stmt)
+    for pending in pending_results.unique().scalars().all():
+        existing_usernames.add(pending.username)
+
     if username in existing_usernames or is_reserved_username(username):
         counter = 1
         match_len = 0
@@ -69,33 +83,35 @@ async def generate_unique_username(db: AsyncSession, email: str) -> str:
     return username
 
 
-async def request_verification(db: AsyncSession, user: User) -> None:
-    """Generate and send an email verification token for the user."""
-    if not user.is_active or user.is_verified:
-        return
-
+async def _generate_verification_token(db: AsyncSession) -> str:
+    """Generate a unique email verification token."""
     while True:
         token = "".join(random.choices(string.ascii_letters + string.digits, k=10))
         statement = select(User).where(User.email_verification_token == token)
         results = await db.execute(statement)
-        existing_user = results.unique().scalars().first()
-        if not existing_user:
-            break
+        if not results.unique().scalars().first():
+            stmt = select(PendingRegistration).where(
+                PendingRegistration.email_verification_token == token
+            )
+            results = await db.execute(stmt)
+            if not results.unique().scalars().first():
+                return token
 
-    user.email_verification_token = token
-    db.add(user)
-    await db.commit()
-    await db.refresh(user)
 
-    logger.info("Verification requested for user %s", user.id)
+async def send_verification_email(email: str, token: str) -> None:
     verify_url = f"{settings.FRONTEND_URL}/verify?token={token}"
     subject = "Verify your Cardie email address"
     content = f"Please verify your email address by clicking the following link:\n\n{verify_url}\n\nOr use this code: {token}"
-    await send_email(user.email, subject, content)
+    await send_email(email, subject, content)
 
 
 async def create_user(db: AsyncSession, user_create: UserCreate) -> User:
-    """Create a new user and trigger email verification if necessary."""
+    """Create a guest account; real credentials go to pending registration.
+
+    With deferred promotion there are no unverified non-guest accounts:
+    signup stages credentials in pending_registrations against the given
+    (guest) user, who keeps using the site unchanged until they verify.
+    """
     username = user_create.username
     if username:
         if is_reserved_username(username):
@@ -122,63 +138,221 @@ async def create_user(db: AsyncSession, user_create: UserCreate) -> User:
     db.add(db_user)
     await db.commit()
     await db.refresh(db_user)
-
-    if not db_user.is_guest and not db_user.is_verified:
-        await request_verification(db, db_user)
-
     return db_user
+
+
+async def stage_pending_registration(
+    db: AsyncSession,
+    guest_user: User | None,
+    email: str,
+    password: str,
+    username: str | None = None,
+) -> tuple[PendingRegistration, bool]:
+    """Stage credentials for a guest in pending_registrations and email the token.
+
+    The guest user row is never modified. An existing pending registration
+    for the same guest+email is replaced with a fresh token (resend path).
+    Returns (pending_registration, created) where created is False when an
+    existing record was refreshed.
+    """
+    if username and is_reserved_username(username):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="USERNAME_RESERVED",
+        )
+
+    # A real (non-guest) user already owns this email
+    existing_stmt = select(User).where(User.email == email)
+    existing = (await db.execute(existing_stmt)).unique().scalar_one_or_none()
+    if existing is not None and not (
+        guest_user is not None and existing.id == guest_user.id and existing.is_guest
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="REGISTER_USER_ALREADY_EXISTS",
+        )
+
+    # Another pending registration already holds this email
+    pending_stmt = select(PendingRegistration).where(PendingRegistration.email == email)
+    pending_existing = (await db.execute(pending_stmt)).unique().scalar_one_or_none()
+    if pending_existing is not None and (
+        guest_user is None or pending_existing.guest_user_id != guest_user.id
+    ):
+        # A different visitor staged this email; per product decision we do
+        # not merge or reveal it - treat as a conflict.
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="REGISTER_USER_ALREADY_EXISTS",
+        )
+
+    # Requested username must be free among accounts and staged registrations
+    if username:
+        username_stmt = select(User).where(User.username == username)
+        if guest_user is not None:
+            username_stmt = username_stmt.where(User.id != guest_user.id)
+        username_taken = (await db.execute(username_stmt)).unique().scalar_one_or_none()
+        pending_username_stmt = select(PendingRegistration).where(
+            PendingRegistration.username == username
+        )
+        if pending_existing is not None:
+            pending_username_stmt = pending_username_stmt.where(
+                PendingRegistration.id != pending_existing.id
+            )
+        pending_username_taken = (
+            (await db.execute(pending_username_stmt)).unique().scalars().first()
+        )
+        if username_taken is not None or pending_username_taken is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="REGISTER_USER_ALREADY_EXISTS",
+            )
+
+    token = await _generate_verification_token(db)
+    if pending_existing is not None:
+        pending_existing.hashed_password = get_password_hash(password)
+        pending_existing.username = username
+        pending_existing.display_name = username
+        pending_existing.email_verification_token = token
+        db.add(pending_existing)
+        await db.commit()
+        logger.info(
+            "Verification re-staged for guest %s", pending_existing.guest_user_id
+        )
+        return pending_existing, False
+
+    if guest_user is None:
+        # No session (e.g. curl signup): create a throwaway guest to attach to.
+        # Resolve the staged username first so the throwaway guest (whose own
+        # username derives from its email) cannot consume the desired one.
+        if not username:
+            username = await generate_unique_username(db, email)
+        guest_user = await create_user(
+            db,
+            UserCreate(
+                email=email,
+                password=password,
+                is_guest=True,
+                username="g" + uuid.uuid4().hex[:12],
+            ),
+        )
+
+    pending = PendingRegistration(
+        email=email,
+        hashed_password=get_password_hash(password),
+        username=username,
+        display_name=username,
+        email_verification_token=token,
+        guest_user_id=guest_user.id,
+    )
+    db.add(pending)
+    try:
+        await db.commit()
+    except sqlalchemy.exc.IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="REGISTER_USER_ALREADY_EXISTS",
+        )
+    logger.info("Verification staged for guest %s", guest_user.id)
+    return pending, True
+
+
+async def promote_guest_by_token(db: AsyncSession, token: str) -> User | None:
+    """Promote the guest linked to a verified pending registration in place.
+
+    The guest row keeps its id, so all owned data carries over automatically
+    and any live session cookie continues to work. Returns None for unknown
+    tokens; raises REGISTER_USER_ALREADY_EXISTS when the email was claimed by
+    another account meanwhile.
+    """
+    stmt = select(PendingRegistration).where(
+        PendingRegistration.email_verification_token == token
+    )
+    result = await db.execute(stmt)
+    pending = result.unique().scalars().first()
+    if not pending:
+        return None
+
+    email_taken_stmt = select(User).where(User.email == pending.email)
+    email_taker = (await db.execute(email_taken_stmt)).unique().scalar_one_or_none()
+    if email_taker is not None and (
+        email_taker.id != pending.guest_user_id or not email_taker.is_guest
+    ):
+        # Email claimed by someone else while verification was pending.
+        await db.delete(pending)
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="REGISTER_USER_ALREADY_EXISTS",
+        )
+
+    guest_user = None
+    if email_taker is not None and email_taker.id == pending.guest_user_id:
+        guest_user = email_taker
+    else:
+        user_stmt = select(User).where(User.id == pending.guest_user_id)
+        guest_user = (await db.execute(user_stmt)).unique().scalar_one_or_none()
+
+    if guest_user is None:
+        # Guest row was deleted meanwhile; create the account fresh so the
+        # verification link still works (without any guest data to carry).
+        random_password = "".join(
+            random.choices(string.ascii_letters + string.digits, k=32)
+        )
+        username = pending.username or await generate_unique_username(db, pending.email)
+        user = User(
+            email=pending.email,
+            hashed_password=get_password_hash(random_password),
+            username=username,
+            display_name=pending.display_name or username,
+            is_verified=True,
+        )
+        db.add(user)
+    else:
+        user = await _apply_guest_upgrade(
+            db,
+            guest_user,
+            pending.email,
+            pending.hashed_password,
+            pending.username,
+        )
+
+    await db.delete(pending)
+    await db.commit()
+    await db.refresh(user)
+    return user
 
 
 async def _apply_guest_upgrade(
     db: AsyncSession,
     guest_user: User,
     email: str,
-    password: str,
+    hashed_password: str,
     username: str | None,
-    is_verified: bool,
 ) -> User:
-    """Set account fields on a guest user without committing."""
+    """Set account fields on a guest user without committing.
+
+    The guest keeps its user id, so all owned data carries over.
+    """
     if username:
-        if is_reserved_username(username):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="USERNAME_RESERVED",
-            )
+        # Username conflicts are re-generated at promotion time.
+        stmt = select(User).where(User.username == username, User.id != guest_user.id)
+        conflict = (await db.execute(stmt)).unique().scalar_one_or_none()
+        if conflict is not None or is_reserved_username(username):
+            username = await generate_unique_username(db, email)
     else:
         username = await generate_unique_username(db, email)
 
     guest_user.email = email
-    guest_user.hashed_password = get_password_hash(password)
+    guest_user.hashed_password = hashed_password
     guest_user.username = username
     guest_user.display_name = username
     guest_user.is_guest = False
-    guest_user.is_verified = is_verified
+    guest_user.is_verified = True
     guest_user.email_verification_token = None
     guest_user.reset_password_token = None
 
     db.add(guest_user)
-    return guest_user
-
-
-async def upgrade_guest_user(
-    db: AsyncSession,
-    guest_user: User,
-    email: str,
-    password: str,
-    username: str | None = None,
-) -> User:
-    """Convert a guest account into a regular account in place.
-
-    The guest's user_id is preserved so all owned data (decks, folders,
-    learning progress, stars, activity) stays attached to the account.
-    """
-    await _apply_guest_upgrade(db, guest_user, email, password, username, False)
-    await db.commit()
-    await db.refresh(guest_user)
-
-    if not guest_user.is_verified:
-        await request_verification(db, guest_user)
-
     return guest_user
 
 
@@ -238,7 +412,11 @@ async def handle_oauth_callback(
                 random.choices(string.ascii_letters + string.digits, k=32)
             )
             user = await _apply_guest_upgrade(
-                db, guest_user, account_email, random_password, None, True
+                db,
+                guest_user,
+                account_email,
+                get_password_hash(random_password),
+                None,
             )
         else:
             # Create new user

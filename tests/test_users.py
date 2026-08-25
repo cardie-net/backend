@@ -1,6 +1,8 @@
 import pytest
 from httpx import AsyncClient
 
+from tests.conftest import extract_email_token
+
 
 @pytest.fixture
 async def guest_token1(async_client: AsyncClient) -> str:
@@ -39,114 +41,137 @@ from httpx import AsyncClient
 
 
 @pytest.mark.asyncio
-async def test_username_auto_generation(async_client: AsyncClient):
+async def test_username_auto_generation(async_client: AsyncClient, mock_send_email):
     response = await async_client.post(
         "/api/v1/auth/register",
         json={"email": "test@example.com", "password": "password123"},
     )
-    assert response.status_code == 201
-    data = response.json()
+    assert response.status_code == 202
+    token = extract_email_token(mock_send_email)
+    resp = await async_client.post("/api/v1/auth/verify", json={"token": token})
+    data = resp.json()
     assert data["username"].startswith("test")
     assert len(data["username"]) == 8
     assert data["display_name"] == data["username"]
 
 
 @pytest.mark.asyncio
-async def test_username_auto_generation_conflict(async_client: AsyncClient):
+async def test_username_auto_generation_conflict(
+    async_client: AsyncClient, mock_send_email
+):
     # 'conflict' is exactly 8 chars, so no random padding should be added.
     # We expect 'conflict' and then 'conflict1'.
     await async_client.post(
         "/api/v1/auth/register",
         json={"email": "conflict@example.com", "password": "password123"},
     )
-    response = await async_client.post(
+    await async_client.post(
         "/api/v1/auth/register",
         json={"email": "conflict@other.com", "password": "password123"},
     )
-    assert response.status_code == 201
-    data = response.json()
+
+    # The last emailed token belongs to the second staged registration
+    token = extract_email_token(mock_send_email)
+    resp = await async_client.post("/api/v1/auth/verify", json={"token": token})
+    assert resp.status_code == 200
+    data = resp.json()
     assert data["username"] == "conflict1"
 
 
 @pytest.mark.asyncio
-async def test_username_auto_generation_conflict_multiple(async_client: AsyncClient):
+async def test_username_auto_generation_conflict_multiple(
+    async_client: AsyncClient, mock_send_email
+):
     # 'multi' is 5 chars, so they will all get 3 random digits padding.
     # Because they are random, they likely won't collide. We just check they are valid.
-    await async_client.post(
-        "/api/v1/auth/register",
-        json={"email": "multi@example.com", "password": "password123"},
-    )
-    await async_client.post(
-        "/api/v1/auth/register",
-        json={"email": "multi@other.com", "password": "password123"},
-    )
-    response = await async_client.post(
-        "/api/v1/auth/register",
-        json={"email": "multi@third.com", "password": "password123"},
-    )
-    assert response.status_code == 201
-    data = response.json()
-    assert data["username"].startswith("multi")
-    assert len(data["username"]) == 8
+    for domain in ("example.com", "other.com", "third.com"):
+        reg = await async_client.post(
+            "/api/v1/auth/register",
+            json={"email": f"multi@{domain}", "password": "password123"},
+        )
+        assert reg.status_code == 202
+        token = extract_email_token(mock_send_email)
+        verify_resp = await async_client.post(
+            "/api/v1/auth/verify", json={"token": token}
+        )
+        assert verify_resp.status_code == 200
+        data = verify_resp.json()
+        assert data["username"].startswith("multi")
+        assert len(data["username"]) == 8
 
 
 @pytest.mark.asyncio
-async def test_username_auto_generation_long_email(async_client: AsyncClient):
+async def test_username_auto_generation_long_email(
+    async_client: AsyncClient, mock_send_email
+):
     # longusername is > 8 chars, no padding needed.
     response = await async_client.post(
         "/api/v1/auth/register",
         json={"email": "longusername@example.com", "password": "password123"},
     )
-    assert response.status_code == 201
-    data = response.json()
+    assert response.status_code == 202
+    token = extract_email_token(mock_send_email)
+    resp = await async_client.post("/api/v1/auth/verify", json={"token": token})
+    data = resp.json()
     assert data["username"] == "longusername"
     assert data["display_name"] == "longusername"
 
 
 @pytest.mark.asyncio
 async def test_username_auto_generation_very_long_email_truncation(
-    async_client: AsyncClient,
+    async_client: AsyncClient, mock_send_email
 ):
     long_prefix = "a" * 40
     response = await async_client.post(
         "/api/v1/auth/register",
         json={"email": f"{long_prefix}@example.com", "password": "password123"},
     )
-    assert response.status_code == 201
-    data = response.json()
+    assert response.status_code == 202
+    token = extract_email_token(mock_send_email)
+    resp = await async_client.post("/api/v1/auth/verify", json={"token": token})
+    data = resp.json()
     assert data["username"] == "a" * 26
     assert data["display_name"] == "a" * 26
 
 
 @pytest.mark.asyncio
 async def test_username_auto_generation_very_long_email_conflict(
-    async_client: AsyncClient,
+    async_client: AsyncClient, mock_send_email
 ):
     long_prefix = "b" * 40
     # First user
-    await async_client.post(
+    first = await async_client.post(
         "/api/v1/auth/register",
         json={"email": f"{long_prefix}@example.com", "password": "password123"},
     )
-    # Second user, should get a conflict and append "1"
-    response = await async_client.post(
+    assert first.status_code == 202
+    # Second staging with a different email gets the conflict-resolved name
+    second = await async_client.post(
         "/api/v1/auth/register",
-        json={"email": f"{long_prefix}@other.com", "password": "password123"},
+        json={"email": f"{long_prefix}x@example.com", "password": "password123"},
     )
-    assert response.status_code == 201
-    data = response.json()
+    assert second.status_code == 202
+
+    token = extract_email_token(mock_send_email)
+    resp = await async_client.post("/api/v1/auth/verify", json={"token": token})
+    data = resp.json()
+    assert resp.status_code == 200
     assert data["username"] == ("b" * 26) + "1"
 
 
 @pytest.mark.asyncio
-async def test_username_auto_generation_short_email_padding(async_client: AsyncClient):
+async def test_username_auto_generation_short_email_padding(
+    async_client: AsyncClient, mock_send_email
+):
     # 'a' is 1 char, needs 7 random digits padding.
     response = await async_client.post(
         "/api/v1/auth/register",
         json={"email": "a@example.com", "password": "password123"},
     )
-    assert response.status_code == 201
-    data = response.json()
+    assert response.status_code == 202
+    token = extract_email_token(mock_send_email)
+    resp = await async_client.post("/api/v1/auth/verify", json={"token": token})
+    data = resp.json()
     username = data["username"]
     assert username.startswith("a")
     assert len(username) == 8
@@ -666,20 +691,27 @@ async def test_reserved_username_register_rejected(async_client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_reserved_username_auto_generation_avoids_reserved(
-    async_client: AsyncClient,
+    async_client: AsyncClient, mock_send_email
 ):
     # 'settings' is 8 chars, but reserved. Auto-generation should append a counter.
     res_settings = await async_client.post(
         "/api/v1/auth/register",
         json={"email": "settings@example.com", "password": "password123"},
     )
-    assert res_settings.status_code == 201
-    assert res_settings.json()["username"] == "settings1"
+    assert res_settings.status_code == 202
 
     # 'community' is 9 chars, but reserved.
     res_comm = await async_client.post(
         "/api/v1/auth/register",
         json={"email": "community@example.com", "password": "password123"},
     )
-    assert res_comm.status_code == 201
-    assert res_comm.json()["username"] == "community1"
+    assert res_comm.status_code == 202
+
+    token = extract_email_token(mock_send_email)
+    resp = await async_client.post("/api/v1/auth/verify", json={"token": token})
+    data = resp.json()
+    assert resp.status_code == 200
+    if data["email"].startswith("settings"):
+        assert data["username"] == "settings1"
+    else:
+        assert data["username"] == "community1"

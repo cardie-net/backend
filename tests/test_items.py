@@ -17,7 +17,7 @@ async def registered_user(async_client: AsyncClient, mock_send_email):
             "is_guest": False,
         },
     )
-    user_id = reg_resp.json()["id"]
+    assert reg_resp.status_code == 202
 
     content = mock_send_email.call_args[0][2]
     import re
@@ -26,7 +26,11 @@ async def registered_user(async_client: AsyncClient, mock_send_email):
     captured_token = match.group(1)
 
     # Verify user
-    await async_client.post("/api/v1/auth/verify", json={"token": captured_token})
+    verify_resp = await async_client.post(
+        "/api/v1/auth/verify", json={"token": captured_token}
+    )
+    assert verify_resp.status_code == 200
+    user_id = verify_resp.json()["id"]
 
     # Login
     login_resp = await async_client.post(

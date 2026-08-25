@@ -29,15 +29,14 @@ async def test_register_user(async_client: AsyncClient):
             "is_guest": False,
         },
     )
-    assert response.status_code == 201
+    assert response.status_code == 202
     data = response.json()
-    assert data["email"] == "test@example.com"
-    assert "id" in data
+    assert data["msg"] == "Verification email sent"
 
 
 @pytest.mark.asyncio
-async def test_login_user_unverified(async_client: AsyncClient):
-    # Register first
+async def test_login_before_verification_fails(async_client: AsyncClient):
+    # Register only stages the credentials; no usable account exists yet
     await async_client.post(
         "/api/v1/auth/register",
         json={
@@ -47,7 +46,7 @@ async def test_login_user_unverified(async_client: AsyncClient):
         },
     )
 
-    # Login should fail because unverified
+    # Unverified accounts cannot exist, so this is plain bad credentials
     response = await async_client.post(
         "/api/v1/auth/jwt/login",
         data={"username": "testlogin@example.com", "password": "supersecretpassword"},
@@ -55,7 +54,7 @@ async def test_login_user_unverified(async_client: AsyncClient):
     )
     assert response.status_code == 400
     data = response.json()
-    assert data["detail"] == "USER_NOT_VERIFIED"
+    assert data["detail"] == "LOGIN_BAD_CREDENTIALS"
 
 
 @pytest.mark.asyncio
@@ -98,7 +97,7 @@ async def test_user_verification_flow(async_client: AsyncClient, mock_send_email
             "is_guest": False,
         },
     )
-    assert reg_response.status_code == 201
+    assert reg_response.status_code == 202
 
     captured_token = extract_email_token(mock_send_email)
 
@@ -112,16 +111,17 @@ async def test_user_verification_flow(async_client: AsyncClient, mock_send_email
     )
     assert resp.status_code == 400
 
-    # Valid token
+    # Valid token promotes the staged registration into a real account
     resp = await async_client.post(
         "/api/v1/auth/verify", json={"token": captured_token}
     )
     assert resp.status_code == 200
     data = resp.json()
     assert data["is_verified"] is True
+    assert data["is_guest"] is False
     assert data["email"] == "testverify@example.com"
 
-    # Already verified
+    # Token is single use: the pending registration was consumed
     resp = await async_client.post(
         "/api/v1/auth/verify", json={"token": captured_token}
     )
@@ -143,6 +143,9 @@ async def test_forgot_password_flow(async_client: AsyncClient, mock_send_email):
     captured_token = extract_email_token(mock_send_email)
 
     await async_client.post("/api/v1/auth/verify", json={"token": captured_token})
+
+    # Clear the mock history so the reset email is the next captured one
+    mock_send_email.reset_mock()
 
     forgot_response = await async_client.post(
         "/api/v1/auth/forgot-password", json={"email": "forgot@example.com"}
@@ -195,6 +198,13 @@ async def test_resend_verification(async_client: AsyncClient, mock_send_email):
     captured_token = extract_email_token(mock_send_email)
     assert captured_token is not None
 
+    # The resent token still promotes the same staged registration
+    verify_resp = await async_client.post(
+        "/api/v1/auth/verify", json={"token": captured_token}
+    )
+    assert verify_resp.status_code == 200
+    assert verify_resp.json()["email"] == "resend@example.com"
+
 
 GUEST_PASSWORD = "supersecretpassword"
 
@@ -239,27 +249,20 @@ async def test_register_upgrades_guest_keeps_data(
     )
     assert progress_resp.status_code == 204
 
-    # Signing up upgrades the guest account in place
+    # Signing up only stages the registration; the account stays a guest
     reg_resp = await async_client.post(
         "/api/v1/auth/register",
         json={"email": "upgraded@example.com", "password": GUEST_PASSWORD},
         headers=guest_headers,
     )
-    assert reg_resp.status_code == 201
-    data = reg_resp.json()
-    assert data["id"] == guest_id
-    assert data["is_guest"] is False
-    assert data["email"] == "upgraded@example.com"
-    assert data["is_verified"] is False
-
-    # Verification email is sent, exactly like a normal signup
+    assert reg_resp.status_code == 202
     assert mock_send_email.called
 
-    # The existing session cookie now resolves to the upgraded account
+    # The session still resolves to the same untouched guest account:
+    # full access while the verification is pending.
     me_resp = await async_client.get("/api/v1/users/me", headers=guest_headers)
     assert me_resp.json()["id"] == guest_id
-    assert me_resp.json()["is_guest"] is False
-    assert me_resp.json()["email"] == "upgraded@example.com"
+    assert me_resp.json()["is_guest"] is True
 
     # All guest data is still reachable
     items_resp = await async_client.get(
@@ -279,14 +282,41 @@ async def test_register_upgrades_guest_keeps_data(
     )
     assert progress_resp.json() == [{"card_id": card_id, "box": 3}]
 
-    # Login is blocked until the email is verified (verification on signup)
+    # Verifying promotes the same user row in place: same id, so all data
+    # carries over and the live session cookie keeps working.
+    captured_token = extract_email_token(mock_send_email)
+    verify_resp = await async_client.post(
+        "/api/v1/auth/verify", json={"token": captured_token}
+    )
+    assert verify_resp.status_code == 200
+    data = verify_resp.json()
+    assert data["id"] == guest_id
+    assert data["is_guest"] is False
+    assert data["is_verified"] is True
+    assert data["email"] == "upgraded@example.com"
+
+    me_resp = await async_client.get("/api/v1/users/me", headers=guest_headers)
+    assert me_resp.json()["id"] == guest_id
+    assert me_resp.json()["is_guest"] is False
+    assert me_resp.json()["is_verified"] is True
+
+    # All data carried over through promotion
+    items_resp = await async_client.get(
+        f"/api/v1/users/{guest_id}/items", headers=guest_headers
+    )
+    assert deck_id in [item["id"] for item in items_resp.json()]
+    progress_resp = await async_client.get(
+        f"/api/v1/decks/{deck_id}/progress", headers=guest_headers
+    )
+    assert progress_resp.json() == [{"card_id": card_id, "box": 3}]
+
+    # Login works right after verification (password from signup form)
     login_resp = await async_client.post(
         "/api/v1/auth/jwt/login",
         data={"username": "upgraded@example.com", "password": GUEST_PASSWORD},
         headers={"Content-Type": "application/x-www-form-urlencoded"},
     )
-    assert login_resp.status_code == 400
-    assert login_resp.json()["detail"] == "USER_NOT_VERIFIED"
+    assert login_resp.status_code == 204
 
 
 @pytest.mark.asyncio
@@ -347,18 +377,15 @@ async def test_register_guest_username_conflict(async_client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_register_without_guest_session_creates_new_account(
+async def test_register_without_guest_session_stages_registration(
     async_client: AsyncClient,
 ):
     response = await async_client.post(
         "/api/v1/auth/register",
         json={"email": "fresh@example.com", "password": GUEST_PASSWORD},
     )
-    assert response.status_code == 201
-    data = response.json()
-    assert data["is_guest"] is False
-    assert data["email"] == "fresh@example.com"
-    assert data["is_verified"] is False
+    assert response.status_code == 202
+    assert response.json()["msg"] == "Verification email sent"
 
 
 @pytest.mark.asyncio
@@ -407,7 +434,6 @@ async def test_login_discards_guest_data(
         select(Deck).where(Deck.id == deck_id).execution_options(populate_existing=True)
     )
     assert deck_result.scalars().first() is None
-
     # The real account is untouched and now owns the session
     me_resp = await async_client.get("/api/v1/users/me")
     assert me_resp.json()["email"] == "real@example.com"
