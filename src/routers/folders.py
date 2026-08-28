@@ -21,7 +21,7 @@ from ..services.s3_service import (
     extract_object_name_from_url,
     upload_file_to_s3,
 )
-from ..utils import is_slug_taken
+from ..utils import enforce_guest_privacy, is_slug_taken
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +46,8 @@ async def create_folder(
         raise HTTPException(
             status_code=400, detail="Folder or deck with this slug already exists"
         )
+
+    enforce_guest_privacy(user, folder.privacy)
 
     try:
         return await crud.create_folder_for_user(db=db, folder=folder, user_id=user.id)
@@ -176,6 +178,12 @@ async def update_folder(
         raise HTTPException(
             status_code=400, detail="Folder or deck with this slug already exists"
         )
+
+    if (
+        folder_update.privacy is not None
+        and "privacy" in folder_update.model_fields_set
+    ):
+        enforce_guest_privacy(user, folder_update.privacy)
 
     try:
         old_cover = (

@@ -479,13 +479,11 @@ async def guest_token2(async_client: AsyncClient) -> str:
 
 
 @pytest.mark.asyncio
-async def test_get_user_deck_by_slug_public(
-    async_client: AsyncClient, guest_token1: str
-):
+async def test_get_user_deck_by_slug_public(async_client: AsyncClient, user_token: str):
     # Get user profile to get username
     me_resp = await async_client.get(
         "/api/v1/users/me",
-        headers={"X-Test-Cookie": guest_token1},
+        headers={"X-Test-Cookie": user_token},
     )
     username = me_resp.json()["username"]
 
@@ -493,7 +491,7 @@ async def test_get_user_deck_by_slug_public(
     deck_resp = await async_client.post(
         "/api/v1/decks",
         json={"name": "Public Deck", "slug": "public-deck", "privacy": "public"},
-        headers={"X-Test-Cookie": guest_token1},
+        headers={"X-Test-Cookie": user_token},
     )
     deck_slug = deck_resp.json()["slug"]
 

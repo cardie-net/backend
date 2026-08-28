@@ -13,11 +13,11 @@ async def private_deck_id(async_client: AsyncClient, guest_token1: str) -> int:
 
 
 @pytest.fixture
-async def public_deck_id(async_client: AsyncClient, guest_token1: str) -> int:
+async def public_deck_id(async_client: AsyncClient, user_token: str) -> int:
     response = await async_client.post(
         "/api/v1/decks/",
         json={"name": "Public Deck", "slug": "public-deck", "privacy": "public"},
-        headers={"X-Test-Cookie": guest_token1},
+        headers={"X-Test-Cookie": user_token},
     )
     return response.json()["id"]
 
@@ -105,11 +105,11 @@ async def test_read_cards_non_owner_forbidden_private_deck(
 
 @pytest.mark.asyncio
 async def test_read_cards_non_owner_success_public_deck(
-    async_client: AsyncClient, guest_token2: str, public_deck_id: int
+    async_client: AsyncClient, guest_token1: str, public_deck_id: int
 ):
     response = await async_client.get(
         f"/api/v1/decks/{public_deck_id}/cards/",
-        headers={"X-Test-Cookie": guest_token2},
+        headers={"X-Test-Cookie": guest_token1},
     )
     assert response.status_code == 200
 

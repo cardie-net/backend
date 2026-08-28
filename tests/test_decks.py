@@ -3,6 +3,8 @@ import uuid
 import pytest
 from httpx import AsyncClient
 
+from src.utils import GUEST_PRIVACY_DETAIL
+
 
 @pytest.mark.asyncio
 async def test_create_deck(async_client: AsyncClient, guest_token: str):
@@ -307,12 +309,12 @@ async def test_delete_deck_not_found(async_client: AsyncClient, guest_token: str
 
 
 @pytest.mark.asyncio
-async def test_patch_deck(async_client: AsyncClient, guest_token: str):
+async def test_patch_deck(async_client: AsyncClient, user_token: str):
     # Create deck
     create_resp = await async_client.post(
         "/api/v1/decks",
         json={"name": "Original Deck", "slug": "original-deck", "privacy": "private"},
-        headers={"X-Test-Cookie": guest_token},
+        headers={"X-Test-Cookie": user_token},
     )
     deck_id = create_resp.json()["id"]
 
@@ -320,7 +322,7 @@ async def test_patch_deck(async_client: AsyncClient, guest_token: str):
     patch_resp = await async_client.patch(
         f"/api/v1/decks/{deck_id}",
         json={"name": "Patched Deck", "slug": "patched-deck", "privacy": "public"},
-        headers={"X-Test-Cookie": guest_token},
+        headers={"X-Test-Cookie": user_token},
     )
     assert patch_resp.status_code == 200
     data = patch_resp.json()
@@ -1300,9 +1302,9 @@ async def test_import_deck_with_folder(
 
 @pytest.mark.asyncio
 async def test_export_deck_endpoint(
-    async_client: AsyncClient, guest_token: str, guest_token2: str
+    async_client: AsyncClient, user_token: str, guest_token: str
 ):
-    # 1. Import a deck
+    # 1. Import a deck (as a registered user so it can be made public)
     import_payload = {
         "name": "Exportable Deck",
         "privacy": "private",
@@ -1320,36 +1322,36 @@ async def test_export_deck_endpoint(
     create_res = await async_client.post(
         "/api/v1/decks/import",
         json=import_payload,
-        headers={"X-Test-Cookie": guest_token},
+        headers={"X-Test-Cookie": user_token},
     )
     deck_id = create_res.json()["id"]
 
     # 2. Export deck as tab/newline text
     exp_res = await async_client.get(
         f"/api/v1/decks/{deck_id}/export?delimiter=tab&record_separator=newline",
-        headers={"X-Test-Cookie": guest_token},
+        headers={"X-Test-Cookie": user_token},
     )
     assert exp_res.status_code == 200
     assert "attachment" in exp_res.headers.get("Content-Disposition", "")
     assert "Front 1\tBack 1\nFront 2\tBack 2" in exp_res.text
 
-    # 3. User 2 exporting User 1's private deck -> 403
+    # 3. Another user exporting User 1's private deck -> 403
     exp_unauth = await async_client.get(
         f"/api/v1/decks/{deck_id}/export",
-        headers={"X-Test-Cookie": guest_token2},
+        headers={"X-Test-Cookie": guest_token},
     )
     assert exp_unauth.status_code == 403
 
-    # 4. Make deck public and test User 2 export -> 200
+    # 4. Make deck public and test another user's export -> 200
     patch_res = await async_client.patch(
         f"/api/v1/decks/{deck_id}",
         json={"privacy": "public"},
-        headers={"X-Test-Cookie": guest_token},
+        headers={"X-Test-Cookie": user_token},
     )
     assert patch_res.status_code == 200
     exp_pub = await async_client.get(
         f"/api/v1/decks/{deck_id}/export",
-        headers={"X-Test-Cookie": guest_token2},
+        headers={"X-Test-Cookie": guest_token},
     )
     assert exp_pub.status_code == 200
 
@@ -1359,7 +1361,7 @@ async def test_deck_timestamps(async_client: AsyncClient, guest_token: str):
     # 1. Create deck and check created_at and updated_at
     create_res = await async_client.post(
         "/api/v1/decks",
-        json={"name": "Timestamp Deck", "slug": "timestamp-deck"},
+        json={"name": "Timestamp Deck", "slug": "timestamp-deck", "privacy": "private"},
         headers={"X-Test-Cookie": guest_token},
     )
     assert create_res.status_code == 200
@@ -1446,3 +1448,75 @@ async def test_delete_deck_with_progress_and_metadata(
         headers={"X-Test-Cookie": guest_token},
     )
     assert del_res.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_guest_cannot_create_public_deck(
+    async_client: AsyncClient, guest_token: str
+):
+    response = await async_client.post(
+        "/api/v1/decks",
+        json={"name": "Sneaky Deck", "slug": "sneaky-deck", "privacy": "public"},
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_guest_cannot_import_public_deck(
+    async_client: AsyncClient, guest_token: str
+):
+    response = await async_client.post(
+        "/api/v1/decks/import",
+        json={"name": "Sneaky Import", "privacy": "public", "cards": []},
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("privacy", ["public", "unlisted"])
+async def test_guest_cannot_patch_deck_privacy(
+    async_client: AsyncClient, guest_token: str, privacy: str
+):
+    create_resp = await async_client.post(
+        "/api/v1/decks",
+        json={"name": "Guest Deck", "slug": "guest-deck-privacy", "privacy": "private"},
+        headers={"X-Test-Cookie": guest_token},
+    )
+    deck_id = create_resp.json()["id"]
+
+    patch_resp = await async_client.patch(
+        f"/api/v1/decks/{deck_id}",
+        json={"privacy": privacy},
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert patch_resp.status_code == 403
+    assert patch_resp.json()["detail"] == GUEST_PRIVACY_DETAIL
+
+    # The deck stays private afterwards
+    get_resp = await async_client.get(
+        f"/api/v1/decks/{deck_id}",
+        headers={"X-Test-Cookie": guest_token},
+    )
+    assert get_resp.json()["privacy"] == "private"
+
+
+@pytest.mark.asyncio
+async def test_registered_user_can_publish_deck(
+    async_client: AsyncClient, user_token: str
+):
+    create_resp = await async_client.post(
+        "/api/v1/decks",
+        json={"name": "My Deck", "slug": "my-deck-pub", "privacy": "private"},
+        headers={"X-Test-Cookie": user_token},
+    )
+    deck_id = create_resp.json()["id"]
+
+    patch_resp = await async_client.patch(
+        f"/api/v1/decks/{deck_id}",
+        json={"privacy": "public"},
+        headers={"X-Test-Cookie": user_token},
+    )
+    assert patch_resp.status_code == 200
+    assert patch_resp.json()["privacy"] == "public"

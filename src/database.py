@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlmodel import SQLModel, select
 
 from src.config import settings
-from src.models.tables import PendingRegistration, User
+from src.models.tables import Deck, Folder, PendingRegistration, PrivacyLevel, User
 
 DATABASE_URL = settings.DATABASE_URL
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
@@ -146,6 +146,26 @@ async def _migrate_legacy_unverified_users(session: AsyncSession) -> None:
         await session.commit()
 
 
+async def _demote_guest_public_items(session: AsyncSession) -> None:
+    """Force all decks and folders owned by guest accounts back to private.
+
+    Guests must not be able to share or publish content. Idempotent: only
+    touches rows whose privacy is not already private.
+    """
+    for model in (Deck, Folder):
+        await session.execute(
+            update(model)
+            .where(
+                model.user_id.in_(
+                    select(User.id).where(User.is_guest == True)
+                ),  # noqa: E712
+                model.privacy != PrivacyLevel.PRIVATE,
+            )
+            .values(privacy=PrivacyLevel.PRIVATE)
+        )
+    await session.commit()
+
+
 async def create_db_and_tables() -> None:
     """Create all configured database tables."""
     async with engine.begin() as conn:
@@ -155,6 +175,7 @@ async def create_db_and_tables() -> None:
 
     async with async_session_maker() as session:
         await _migrate_legacy_unverified_users(session)
+        await _demote_guest_public_items(session)
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:

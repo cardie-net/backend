@@ -154,13 +154,13 @@ async def test_srs_limits(async_client: AsyncClient, guest_token: str):
 
 @pytest.mark.asyncio
 async def test_srs_permissions(
-    async_client: AsyncClient, guest_token: str, guest_token2: str
+    async_client: AsyncClient, user_token: str, guest_token: str
 ):
     # User 1 creates a public deck and a card
     deck_resp = await async_client.post(
         "/api/v1/decks",
         json={"name": "User1 Deck", "slug": "user1-deck", "privacy": "public"},
-        headers={"X-Test-Cookie": guest_token},
+        headers={"X-Test-Cookie": user_token},
     )
     deck_id = deck_resp.json()["id"]
 
@@ -170,7 +170,7 @@ async def test_srs_permissions(
             "front": [{"type": "text", "content": "Question"}],
             "back": [{"type": "text", "content": "Answer"}],
         },
-        headers={"X-Test-Cookie": guest_token},
+        headers={"X-Test-Cookie": user_token},
     )
     card_id = card_resp.json()["id"]
 
@@ -178,13 +178,13 @@ async def test_srs_permissions(
     priv_deck_resp = await async_client.post(
         "/api/v1/decks",
         json={"name": "User1 Private Deck", "slug": "user1-priv", "privacy": "private"},
-        headers={"X-Test-Cookie": guest_token},
+        headers={"X-Test-Cookie": user_token},
     )
     priv_deck_id = priv_deck_resp.json()["id"]
 
     # User 2 CAN activate SRS on User 1's public deck
     act_resp = await async_client.post(
-        f"/api/v1/decks/{deck_id}/srs/activate", headers={"X-Test-Cookie": guest_token2}
+        f"/api/v1/decks/{deck_id}/srs/activate", headers={"X-Test-Cookie": guest_token}
     )
     assert act_resp.status_code == 200
     assert act_resp.json()["activated"] is True
@@ -192,7 +192,7 @@ async def test_srs_permissions(
 
     # User 2 gets counts and sees the activated public deck
     counts_resp = await async_client.get(
-        "/api/v1/srs/counts", headers={"X-Test-Cookie": guest_token2}
+        "/api/v1/srs/counts", headers={"X-Test-Cookie": guest_token}
     )
     assert counts_resp.status_code == 200
     assert deck_id in counts_resp.json()
@@ -200,7 +200,7 @@ async def test_srs_permissions(
 
     # User 2 CAN fetch study cards on User 1's public deck
     study_resp = await async_client.get(
-        f"/api/v1/decks/{deck_id}/srs/study", headers={"X-Test-Cookie": guest_token2}
+        f"/api/v1/decks/{deck_id}/srs/study", headers={"X-Test-Cookie": guest_token}
     )
     assert study_resp.status_code == 200
     assert len(study_resp.json()["new_cards"]) == 1
@@ -209,13 +209,13 @@ async def test_srs_permissions(
     review_resp = await async_client.post(
         f"/api/v1/decks/{deck_id}/srs/review",
         json={"reviews": [{"card_id": card_id, "rating": 3}]},
-        headers={"X-Test-Cookie": guest_token2},
+        headers={"X-Test-Cookie": guest_token},
     )
     assert review_resp.status_code == 204
 
     # User 1's own SRS state is unaffected (unactivated, 0 progress)
     user1_counts = await async_client.get(
-        "/api/v1/srs/counts", headers={"X-Test-Cookie": guest_token}
+        "/api/v1/srs/counts", headers={"X-Test-Cookie": user_token}
     )
     assert user1_counts.status_code == 200
     assert user1_counts.json()[deck_id]["activated"] is False
@@ -223,20 +223,20 @@ async def test_srs_permissions(
     # User 2 CANNOT access User 1's private deck
     priv_study_resp = await async_client.get(
         f"/api/v1/decks/{priv_deck_id}/srs/study",
-        headers={"X-Test-Cookie": guest_token2},
+        headers={"X-Test-Cookie": guest_token},
     )
     assert priv_study_resp.status_code == 403
 
     priv_act_resp = await async_client.post(
         f"/api/v1/decks/{priv_deck_id}/srs/activate",
-        headers={"X-Test-Cookie": guest_token2},
+        headers={"X-Test-Cookie": guest_token},
     )
     assert priv_act_resp.status_code == 403
 
     priv_review_resp = await async_client.post(
         f"/api/v1/decks/{priv_deck_id}/srs/review",
         json={"reviews": []},
-        headers={"X-Test-Cookie": guest_token2},
+        headers={"X-Test-Cookie": guest_token},
     )
     assert priv_review_resp.status_code == 403
 

@@ -1,19 +1,21 @@
 import pytest
 from httpx import AsyncClient
 
+from src.utils import GUEST_PRIVACY_DETAIL
+
 
 @pytest.mark.asyncio
 async def test_create_folder(async_client: AsyncClient, guest_token1: str):
     response = await async_client.post(
         "/api/v1/folders",
-        json={"name": "Test Folder", "slug": "test-folder", "privacy": "public"},
+        json={"name": "Test Folder", "slug": "test-folder", "privacy": "private"},
         headers={"X-Test-Cookie": guest_token1},
     )
     assert response.status_code == 200
     data = response.json()
     assert data["name"] == "Test Folder"
     assert data["slug"] == "test-folder"
-    assert data["privacy"] == "public"
+    assert data["privacy"] == "private"
     assert "id" in data
 
 
@@ -21,7 +23,7 @@ async def test_create_folder(async_client: AsyncClient, guest_token1: str):
 async def test_create_folder_without_slug(async_client: AsyncClient, guest_token1: str):
     response = await async_client.post(
         "/api/v1/folders",
-        json={"name": "Test Folder Without Slug", "privacy": "public"},
+        json={"name": "Test Folder Without Slug", "privacy": "private"},
         headers={"X-Test-Cookie": guest_token1},
     )
 
@@ -42,13 +44,13 @@ async def test_create_folder_without_slug_unique(
 ):
     response1 = await async_client.post(
         "/api/v1/folders",
-        json={"name": "Duplicate Name", "privacy": "public"},
+        json={"name": "Duplicate Name", "privacy": "private"},
         headers={"X-Test-Cookie": guest_token1},
     )
 
     response2 = await async_client.post(
         "/api/v1/folders",
-        json={"name": "Duplicate Name", "privacy": "public"},
+        json={"name": "Duplicate Name", "privacy": "private"},
         headers={"X-Test-Cookie": guest_token1},
     )
 
@@ -76,7 +78,7 @@ async def test_create_folder_without_slug_edge_cases(
 ):
     response = await async_client.post(
         "/api/v1/folders",
-        json={"name": name, "privacy": "public"},
+        json={"name": name, "privacy": "private"},
         headers={"X-Test-Cookie": guest_token1},
     )
 
@@ -100,7 +102,7 @@ async def test_create_folder_without_slug_uniqueness_max_length(
     # First folder
     response1 = await async_client.post(
         "/api/v1/folders",
-        json={"name": name, "privacy": "public"},
+        json={"name": name, "privacy": "private"},
         headers={"X-Test-Cookie": guest_token1},
     )
     assert response1.status_code == 200
@@ -110,7 +112,7 @@ async def test_create_folder_without_slug_uniqueness_max_length(
     # Second folder, same name
     response2 = await async_client.post(
         "/api/v1/folders",
-        json={"name": name, "privacy": "public"},
+        json={"name": name, "privacy": "private"},
         headers={"X-Test-Cookie": guest_token1},
     )
     assert response2.status_code == 200
@@ -132,7 +134,7 @@ async def test_create_folder_name_too_long(
 ):
     response = await async_client.post(
         "/api/v1/folders",
-        json={"name": "A" * 81, "slug": "valid-slug", "privacy": "public"},
+        json={"name": "A" * 81, "slug": "valid-slug", "privacy": "private"},
         headers={"X-Test-Cookie": guest_token1},
     )
     assert response.status_code == 422
@@ -160,7 +162,7 @@ async def test_create_folder_invalid_slug(
 ):
     response = await async_client.post(
         "/api/v1/folders",
-        json={"name": "Valid Name", "slug": invalid_slug, "privacy": "public"},
+        json={"name": "Valid Name", "slug": invalid_slug, "privacy": "private"},
         headers={"X-Test-Cookie": guest_token1},
     )
     assert response.status_code == 422
@@ -187,7 +189,7 @@ async def test_create_folder_non_existent_parent(
         json={
             "name": "Valid Name",
             "slug": "valid-slug",
-            "privacy": "public",
+            "privacy": "private",
             "parent_id": "00000000-0000-0000-0000-000000999999",
         },
         headers={"X-Test-Cookie": guest_token1},
@@ -205,7 +207,7 @@ async def test_create_folder_not_owned_parent(
         json={
             "name": "Other User Folder",
             "slug": "other-user-folder",
-            "privacy": "public",
+            "privacy": "private",
         },
         headers={"X-Test-Cookie": guest_token2},
     )
@@ -217,7 +219,7 @@ async def test_create_folder_not_owned_parent(
         json={
             "name": "Valid Name",
             "slug": "valid-slug",
-            "privacy": "public",
+            "privacy": "private",
             "parent_id": parent_id,
         },
         headers={"X-Test-Cookie": guest_token1},
@@ -230,7 +232,7 @@ async def test_delete_folder_success(async_client: AsyncClient, guest_token1: st
     # Create folder
     create_resp = await async_client.post(
         "/api/v1/folders",
-        json={"name": "To Delete", "slug": "to-delete", "privacy": "public"},
+        json={"name": "To Delete", "slug": "to-delete", "privacy": "private"},
         headers={"X-Test-Cookie": guest_token1},
     )
     folder_id = create_resp.json()["id"]
@@ -250,7 +252,7 @@ async def test_delete_folder_not_owned(
     # Create folder with guest_token1
     create_resp = await async_client.post(
         "/api/v1/folders",
-        json={"name": "Not Yours", "slug": "not-yours", "privacy": "public"},
+        json={"name": "Not Yours", "slug": "not-yours", "privacy": "private"},
         headers={"X-Test-Cookie": guest_token1},
     )
     folder_id = create_resp.json()["id"]
@@ -277,7 +279,7 @@ async def test_patch_folder_success(async_client: AsyncClient, guest_token1: str
     # Create folder
     create_resp = await async_client.post(
         "/api/v1/folders",
-        json={"name": "Old Name", "slug": "old-slug", "privacy": "public"},
+        json={"name": "Old Name", "slug": "old-slug", "privacy": "private"},
         headers={"X-Test-Cookie": guest_token1},
     )
     folder_id = create_resp.json()["id"]
@@ -300,7 +302,7 @@ async def test_patch_folder_parent_id(async_client: AsyncClient, guest_token1: s
     # Create parent folder
     parent_resp = await async_client.post(
         "/api/v1/folders",
-        json={"name": "Parent", "slug": "parent", "privacy": "public"},
+        json={"name": "Parent", "slug": "parent", "privacy": "private"},
         headers={"X-Test-Cookie": guest_token1},
     )
     parent_id = parent_resp.json()["id"]
@@ -308,7 +310,7 @@ async def test_patch_folder_parent_id(async_client: AsyncClient, guest_token1: s
     # Create child folder
     child_resp = await async_client.post(
         "/api/v1/folders",
-        json={"name": "Child", "slug": "child", "privacy": "public"},
+        json={"name": "Child", "slug": "child", "privacy": "private"},
         headers={"X-Test-Cookie": guest_token1},
     )
     child_id = child_resp.json()["id"]
@@ -330,7 +332,7 @@ async def test_patch_folder_not_owned(
     # Create folder with guest_token1
     create_resp = await async_client.post(
         "/api/v1/folders",
-        json={"name": "Not Yours", "slug": "not-yours", "privacy": "public"},
+        json={"name": "Not Yours", "slug": "not-yours", "privacy": "private"},
         headers={"X-Test-Cookie": guest_token1},
     )
     folder_id = create_resp.json()["id"]
@@ -421,7 +423,7 @@ async def test_create_folder_with_properties(
         json={
             "name": "Folder Properties",
             "slug": "folder-properties",
-            "privacy": "public",
+            "privacy": "private",
             "properties": {"color": "#ff0000"},
         },
         headers={"X-Test-Cookie": guest_token1},
@@ -440,7 +442,7 @@ async def test_create_folder_empty_properties(
         json={
             "name": "Folder Empty Prop",
             "slug": "folder-empty-prop",
-            "privacy": "public",
+            "privacy": "private",
         },
         headers={"X-Test-Cookie": guest_token1},
     )
@@ -461,7 +463,7 @@ async def test_create_folder_invalid_properties(
         json={
             "name": "Folder Inv Prop",
             "slug": "folder-inv-prop1",
-            "privacy": "public",
+            "privacy": "private",
             "properties": {"color": 123},
         },
         headers={"X-Test-Cookie": guest_token1},
@@ -474,7 +476,7 @@ async def test_create_folder_invalid_properties(
         json={
             "name": "Folder Inv Prop 2",
             "slug": "folder-inv-prop2",
-            "privacy": "public",
+            "privacy": "private",
             "properties": {"invalid_prop": "test"},
         },
         headers={"X-Test-Cookie": guest_token1},
@@ -637,3 +639,62 @@ async def test_patch_folder_description(async_client: AsyncClient, guest_token1:
     )
     assert resp.status_code == 200
     assert resp.json()["properties"]["description"] is None
+
+
+@pytest.mark.asyncio
+async def test_guest_cannot_create_public_folder(
+    async_client: AsyncClient, guest_token1: str
+):
+    response = await async_client.post(
+        "/api/v1/folders",
+        json={"name": "Sneaky Folder", "slug": "sneaky-folder", "privacy": "public"},
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    assert response.status_code == 403
+    assert response.json()["detail"] == GUEST_PRIVACY_DETAIL
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("privacy", ["public", "unlisted"])
+async def test_guest_cannot_patch_folder_privacy(
+    async_client: AsyncClient, guest_token1: str, privacy: str
+):
+    create_resp = await async_client.post(
+        "/api/v1/folders",
+        json={"name": "Guest Folder", "slug": "guest-folder-privacy"},
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    folder_id = create_resp.json()["id"]
+
+    patch_resp = await async_client.patch(
+        f"/api/v1/folders/{folder_id}",
+        json={"privacy": privacy},
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    assert patch_resp.status_code == 403
+
+    get_resp = await async_client.get(
+        f"/api/v1/folders/{folder_id}",
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    assert get_resp.json()["privacy"] == "private"
+
+
+@pytest.mark.asyncio
+async def test_registered_user_can_publish_folder(
+    async_client: AsyncClient, user_token: str
+):
+    create_resp = await async_client.post(
+        "/api/v1/folders",
+        json={"name": "My Folder", "slug": "my-folder-pub", "privacy": "private"},
+        headers={"X-Test-Cookie": user_token},
+    )
+    folder_id = create_resp.json()["id"]
+
+    patch_resp = await async_client.patch(
+        f"/api/v1/folders/{folder_id}",
+        json={"privacy": "public"},
+        headers={"X-Test-Cookie": user_token},
+    )
+    assert patch_resp.status_code == 200
+    assert patch_resp.json()["privacy"] == "public"

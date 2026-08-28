@@ -1,10 +1,22 @@
 import re
 import uuid
 
+from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from . import models
+
+GUEST_PRIVACY_DETAIL = "Guest accounts can only keep their own items private"
+
+
+def enforce_guest_privacy(user: models.User, privacy: models.PrivacyLevel) -> None:
+    """Raise 403 when a guest tries to set a non-private privacy level."""
+    if user.is_guest and privacy != models.PrivacyLevel.PRIVATE:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=GUEST_PRIVACY_DETAIL,
+        )
 
 
 async def is_slug_taken(

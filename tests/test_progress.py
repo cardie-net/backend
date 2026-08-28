@@ -89,13 +89,13 @@ async def test_progress_owner_success(async_client: AsyncClient, guest_token: st
 
 @pytest.mark.asyncio
 async def test_progress_public_other_user(
-    async_client: AsyncClient, guest_token: str, guest_token2: str
+    async_client: AsyncClient, user_token: str, guest_token: str
 ):
     # User 1 creates public deck
     deck_resp = await async_client.post(
         "/api/v1/decks",
         json={"name": "Public Deck", "slug": "public-deck", "privacy": "public"},
-        headers={"X-Test-Cookie": guest_token},
+        headers={"X-Test-Cookie": user_token},
     )
     deck_id = deck_resp.json()["id"]
 
@@ -105,7 +105,7 @@ async def test_progress_public_other_user(
             "front": [{"type": "text", "content": "Q1"}],
             "back": [{"type": "text", "content": "A1"}],
         },
-        headers={"X-Test-Cookie": guest_token},
+        headers={"X-Test-Cookie": user_token},
     )
     card_id = card_resp.json()["id"]
 
@@ -113,14 +113,14 @@ async def test_progress_public_other_user(
     prog_post = await async_client.post(
         f"/api/v1/decks/{deck_id}/progress",
         json={"progress": [{"card_id": card_id, "box": 2}]},
-        headers={"X-Test-Cookie": guest_token2},
+        headers={"X-Test-Cookie": guest_token},
     )
     assert prog_post.status_code == 204
 
     # User 2 gets progress
     prog_get = await async_client.get(
         f"/api/v1/decks/{deck_id}/progress",
-        headers={"X-Test-Cookie": guest_token2},
+        headers={"X-Test-Cookie": guest_token},
     )
     assert prog_get.status_code == 200
     assert len(prog_get.json()) == 1
@@ -129,7 +129,7 @@ async def test_progress_public_other_user(
     # User 1 gets progress (should be empty for them)
     prog_get_user1 = await async_client.get(
         f"/api/v1/decks/{deck_id}/progress",
-        headers={"X-Test-Cookie": guest_token},
+        headers={"X-Test-Cookie": user_token},
     )
     assert prog_get_user1.status_code == 200
     assert len(prog_get_user1.json()) == 0

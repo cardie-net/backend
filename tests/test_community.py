@@ -173,8 +173,8 @@ async def test_cannot_star_own_deck_or_folder(
 async def test_starring_and_popularity_sort(
     async_client: AsyncClient, user_token: str, guest_token: str
 ):
-    author_headers = {"x-test-cookie": guest_token}
-    fan_headers = {"x-test-cookie": user_token}
+    author_headers = {"x-test-cookie": user_token}
+    fan_headers = {"x-test-cookie": guest_token}
 
     d1_res = await async_client.post(
         "/api/v1/decks",
@@ -310,8 +310,8 @@ async def test_community_fuzzy_search(async_client: AsyncClient, user_token: str
 async def test_cascade_delete_deck_and_folder_stars(
     async_client: AsyncClient, user_token: str, guest_token: str
 ):
-    author_headers = {"x-test-cookie": guest_token}
-    fan_headers = {"x-test-cookie": user_token}
+    author_headers = {"x-test-cookie": user_token}
+    fan_headers = {"x-test-cookie": guest_token}
 
     d_res = await async_client.post(
         "/api/v1/decks",
@@ -337,8 +337,8 @@ async def test_cascade_delete_deck_and_folder_stars(
 async def test_get_user_favorites(
     async_client: AsyncClient, user_token: str, guest_token: str
 ):
-    author_headers = {"x-test-cookie": guest_token}
-    fan_headers = {"x-test-cookie": user_token}
+    author_headers = {"x-test-cookie": user_token}
+    fan_headers = {"x-test-cookie": guest_token}
 
     d_res = await async_client.post(
         "/api/v1/decks",

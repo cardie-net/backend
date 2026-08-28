@@ -22,7 +22,7 @@ from ..services.s3_service import (
     extract_object_name_from_url,
     upload_file_to_s3,
 )
-from ..utils import is_slug_taken
+from ..utils import enforce_guest_privacy, is_slug_taken
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +47,8 @@ async def create_deck(
         raise HTTPException(
             status_code=400, detail="Deck with this slug already exists"
         )
+
+    enforce_guest_privacy(user, deck.privacy)
 
     try:
         return await crud.create_deck_for_user(db=db, deck=deck, user_id=user.id)
@@ -77,6 +79,8 @@ async def import_deck(
         raise HTTPException(
             status_code=400, detail="Deck with this slug already exists"
         )
+
+    enforce_guest_privacy(user, deck_import.privacy)
 
     try:
         return await crud.create_deck_with_cards(
@@ -321,6 +325,9 @@ async def update_deck(
         raise HTTPException(
             status_code=400, detail="Deck with this slug already exists"
         )
+
+    if deck_update.privacy is not None and "privacy" in deck_update.model_fields_set:
+        enforce_guest_privacy(user, deck_update.privacy)
 
     try:
         old_cover = (

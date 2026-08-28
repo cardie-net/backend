@@ -1,11 +1,18 @@
 import uuid
 
 import pytest
+from httpx import AsyncClient
 from sqlalchemy import insert, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.database import _migrate_legacy_unverified_users
-from src.models.tables import PendingRegistration, User
+from src.database import _demote_guest_public_items, _migrate_legacy_unverified_users
+from src.models.tables import (
+    Deck,
+    Folder,
+    PendingRegistration,
+    PrivacyLevel,
+    User,
+)
 
 
 async def _insert_raw_user(
@@ -99,3 +106,105 @@ async def test_migration_skips_verified_and_guest_users(async_session: AsyncSess
     assert real.email == "real@example.com"
     assert real.is_guest is False
     assert guest.is_guest is True
+
+
+@pytest.mark.asyncio
+async def test_demote_guest_public_items(async_session: AsyncSession):
+    guest_id = uuid.uuid4()
+    real_id = uuid.uuid4()
+    await _insert_raw_user(
+        async_session, guest_id, "guest_y@guest.example.com", "guesty", is_guest=True
+    )
+    await _insert_raw_user(
+        async_session,
+        real_id,
+        "real2@example.com",
+        "realuser2",
+        is_guest=False,
+        is_verified=True,
+    )
+
+    guest_public_deck = Deck(
+        name="Guest Public Deck",
+        slug="guest-public-deck",
+        privacy=PrivacyLevel.PUBLIC,
+        user_id=guest_id,
+    )
+    guest_unlisted_folder = Folder(
+        name="Guest Unlisted Folder",
+        slug="guest-unlisted-folder",
+        privacy=PrivacyLevel.UNLISTED,
+        user_id=guest_id,
+    )
+    guest_private_deck = Deck(
+        name="Guest Private Deck",
+        slug="guest-private-deck",
+        privacy=PrivacyLevel.PRIVATE,
+        user_id=guest_id,
+    )
+    real_public_deck = Deck(
+        name="Real Public Deck",
+        slug="real-public-deck",
+        privacy=PrivacyLevel.PUBLIC,
+        user_id=real_id,
+    )
+    async_session.add_all(
+        [guest_public_deck, guest_unlisted_folder, guest_private_deck, real_public_deck]
+    )
+    await async_session.commit()
+
+    await _demote_guest_public_items(async_session)
+
+    assert (
+        await async_session.get(Deck, guest_public_deck.id)
+    ).privacy == PrivacyLevel.PRIVATE
+    assert (
+        await async_session.get(Folder, guest_unlisted_folder.id)
+    ).privacy == PrivacyLevel.PRIVATE
+    # Already-private items and non-guest owners are untouched
+    assert (
+        await async_session.get(Deck, guest_private_deck.id)
+    ).privacy == PrivacyLevel.PRIVATE
+    assert (
+        await async_session.get(Deck, real_public_deck.id)
+    ).privacy == PrivacyLevel.PUBLIC
+
+
+@pytest.mark.asyncio
+async def test_startup_migration_demotes_guest_items_via_api(
+    async_client: AsyncClient, async_session: AsyncSession
+):
+    """Guest content created before the API guard existed gets demoted by the startup migration."""
+    from sqlalchemy import update as sa_update
+
+    from src.database import _demote_guest_public_items
+    from src.models.tables import Deck as DeckModel
+
+    guest_resp = await async_client.post("/api/v1/auth/guest")
+    guest_cookie = {"X-Test-Cookie": guest_resp.cookies.get("cardie_session")}
+
+    # Create a private deck through the normal API...
+    deck_resp = await async_client.post(
+        "/api/v1/decks",
+        json={"name": "Legacy Public", "slug": "legacy-public"},
+        headers=guest_cookie,
+    )
+    assert deck_resp.status_code == 200
+    deck_id = uuid.UUID(deck_resp.json()["id"])
+
+    # ...then simulate pre-existing data by setting it public behind the guard's back
+    await async_session.execute(
+        sa_update(DeckModel)
+        .where(DeckModel.id == deck_id)
+        .values(privacy=PrivacyLevel.PUBLIC)
+    )
+    await async_session.commit()
+    async_session.expire_all()
+
+    get_resp = await async_client.get(f"/api/v1/decks/{deck_id}", headers=guest_cookie)
+    assert get_resp.json()["privacy"] == "public"
+
+    await _demote_guest_public_items(async_session)
+
+    get_resp = await async_client.get(f"/api/v1/decks/{deck_id}", headers=guest_cookie)
+    assert get_resp.json()["privacy"] == "private"
