@@ -8,6 +8,9 @@ from pydantic import field_validator
 from sqlmodel import Field
 
 from .common import (
+    MAX_CARD_TEXT_LENGTH,
+    MAX_CARDS_PER_DECK,
+    MAX_NAME_LENGTH,
     ItemProperties,
     PrivacyLevel,
     SocialLinks,
@@ -15,7 +18,14 @@ from .common import (
     validate_optional_slug,
     validate_slug,
 )
-from .tables import CardBase, CardElement, DeckBase, FolderBase
+from .tables import (
+    CardBase,
+    CardElement,
+    DeckBase,
+    FolderBase,
+    ImageElement,
+    TextElement,
+)
 
 # --- User Schemas ---
 
@@ -94,11 +104,22 @@ class FolderCreate(FolderBase):
 
 
 class FolderUpdate(BaseModel):
-    name: str | None = Field(default=None, max_length=80)
+    name: str | None = Field(default=None, min_length=1, max_length=MAX_NAME_LENGTH)
     slug: str | None = Field(default=None, max_length=80)
     privacy: PrivacyLevel | None = None
     parent_id: uuid.UUID | None = None
     properties: ItemProperties | None = None
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str | None) -> str | None:
+        if v is not None:
+            v = v.strip()
+            if not v:
+                raise ValueError("Name cannot be empty or whitespace only")
+            if len(v) > MAX_NAME_LENGTH:
+                raise ValueError(f"Name cannot exceed {MAX_NAME_LENGTH} characters")
+        return v
 
     @field_validator("slug")
     @classmethod
@@ -137,11 +158,22 @@ class DeckCreate(DeckBase):
 
 
 class DeckUpdate(BaseModel):
-    name: str | None = Field(default=None, max_length=80)
+    name: str | None = Field(default=None, min_length=1, max_length=MAX_NAME_LENGTH)
     slug: str | None = Field(default=None, max_length=80)
     privacy: PrivacyLevel | None = None
     folder_id: uuid.UUID | None = None
     properties: ItemProperties | None = None
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str | None) -> str | None:
+        if v is not None:
+            v = v.strip()
+            if not v:
+                raise ValueError("Name cannot be empty or whitespace only")
+            if len(v) > MAX_NAME_LENGTH:
+                raise ValueError(f"Name cannot exceed {MAX_NAME_LENGTH} characters")
+        return v
 
     @field_validator("slug")
     @classmethod
@@ -186,16 +218,28 @@ class CardCreate(CardBase):
 
 
 class CardBatchCreate(BaseModel):
-    cards: list[CardCreate] = PydanticField(min_length=1, max_length=5000)
+    cards: list[CardCreate] = PydanticField(min_length=1, max_length=MAX_CARDS_PER_DECK)
 
 
 class DeckImportRequest(BaseModel):
-    name: str = PydanticField(min_length=1, max_length=80)
+    name: str = PydanticField(min_length=1, max_length=MAX_NAME_LENGTH)
     slug: str | None = PydanticField(default=None, max_length=80)
     privacy: PrivacyLevel = PrivacyLevel.PRIVATE
     folder_id: uuid.UUID | None = None
     properties: ItemProperties | None = None
-    cards: list[CardCreate] = PydanticField(default_factory=list, max_length=5000)
+    cards: list[CardCreate] = PydanticField(
+        default_factory=list, max_length=MAX_CARDS_PER_DECK
+    )
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Name cannot be empty or whitespace only")
+        if len(v) > MAX_NAME_LENGTH:
+            raise ValueError(f"Name cannot exceed {MAX_NAME_LENGTH} characters")
+        return v
 
     @field_validator("slug")
     @classmethod
@@ -206,6 +250,37 @@ class DeckImportRequest(BaseModel):
 class CardUpdate(BaseModel):
     front: list[CardElement] | None = None
     back: list[CardElement] | None = None
+
+    @field_validator("front", "back")
+    @classmethod
+    def validate_card_side(cls, elements: list[Any] | None) -> list[Any] | None:
+        if elements is None:
+            return elements
+        total_text_length = sum(
+            (
+                len(el.content)
+                if isinstance(el, TextElement)
+                else (
+                    len(el.get("content", ""))
+                    if isinstance(el, dict) and el.get("type") == "text"
+                    else 0
+                )
+            )
+            for el in elements
+        )
+        if total_text_length > MAX_CARD_TEXT_LENGTH:
+            raise ValueError(
+                f"Card side text cannot exceed {MAX_CARD_TEXT_LENGTH} characters"
+            )
+        image_count = sum(
+            1
+            for el in elements
+            if isinstance(el, ImageElement)
+            or (isinstance(el, dict) and el.get("type") == "image")
+        )
+        if image_count > 1:
+            raise ValueError("Card side cannot have more than 1 image")
+        return elements
 
 
 class CardReorder(BaseModel):

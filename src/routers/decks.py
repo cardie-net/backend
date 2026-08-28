@@ -82,6 +82,12 @@ async def import_deck(
 
     enforce_guest_privacy(user, deck_import.privacy)
 
+    if len(deck_import.cards) > models.MAX_CARDS_PER_DECK:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Deck cannot contain more than {models.MAX_CARDS_PER_DECK} cards",
+        )
+
     try:
         return await crud.create_deck_with_cards(
             db=db, deck_import=deck_import, user_id=user.id

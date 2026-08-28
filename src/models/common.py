@@ -3,6 +3,13 @@ from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
+# Application-wide entity limits
+MAX_CARDS_PER_DECK = 500
+MAX_CARD_TEXT_LENGTH = 1000
+MAX_NAME_LENGTH = 80
+MAX_DESCRIPTION_LENGTH = 500
+MAX_URL_LENGTH = 2048
+
 # Compiled regex for slug validation (used across multiple models)
 SLUG_PATTERN = re.compile(r"^[a-zA-Z0-9_-]+$")
 URL_PATTERN = re.compile(r"^https?://[^\s/$.?#].[^\s]*$", re.IGNORECASE)

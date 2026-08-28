@@ -41,6 +41,14 @@ async def create_card(
         raise HTTPException(status_code=404, detail="Deck not found")
     if deck.user_id != user.id:
         raise HTTPException(status_code=403, detail="Not enough permissions")
+
+    current_count = await crud.get_card_count_for_deck(db, deck_id=deck_id)
+    if current_count >= models.MAX_CARDS_PER_DECK:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Deck cannot contain more than {models.MAX_CARDS_PER_DECK} cards",
+        )
+
     return await crud.create_card_for_deck(db=db, card=card, deck_id=deck_id)
 
 
@@ -57,6 +65,14 @@ async def create_cards_batch(
         raise HTTPException(status_code=404, detail="Deck not found")
     if deck.user_id != user.id:
         raise HTTPException(status_code=403, detail="Not enough permissions")
+
+    current_count = await crud.get_card_count_for_deck(db, deck_id=deck_id)
+    if current_count + len(batch.cards) > models.MAX_CARDS_PER_DECK:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Deck cannot contain more than {models.MAX_CARDS_PER_DECK} cards (currently has {current_count}, attempting to add {len(batch.cards)})",
+        )
+
     return await crud.create_cards_batch_for_deck(
         db=db, cards=batch.cards, deck_id=deck_id
     )

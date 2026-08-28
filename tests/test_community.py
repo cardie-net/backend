@@ -282,23 +282,71 @@ async def test_community_fuzzy_search(async_client: AsyncClient, user_token: str
     assert res1.json()["total"] == 1
     assert res1.json()["items"][0]["name"] == "Advanced Japanese Kanji"
 
-    # Fuzzy typo search (e.g. "kanjii" or "japanse")
+    # Fuzzy typo search in deck name (e.g. "kanjii" or "japanse")
     res2 = await async_client.get("/api/v1/community?q=japanse")
     assert res2.status_code == 200
     assert res2.json()["total"] == 1
     assert res2.json()["items"][0]["name"] == "Advanced Japanese Kanji"
 
-    # Description search
+    # Description search (single word exact)
     res3 = await async_client.get("/api/v1/community?q=alkanes")
     assert res3.status_code == 200
     assert res3.json()["total"] == 1
     assert res3.json()["items"][0]["name"] == "Organic Chemistry Basics"
+
+    # Description search with typo (e.g. "alkane", "anatomi", "vocabulari")
+    res_desc_typo1 = await async_client.get("/api/v1/community?q=anatomi")
+    assert res_desc_typo1.status_code == 200
+    assert res_desc_typo1.json()["total"] == 1
+    assert res_desc_typo1.json()["items"][0]["name"] == "Medical Terminology"
+
+    res_desc_typo2 = await async_client.get("/api/v1/community?q=vocabulari")
+    assert res_desc_typo2.status_code == 200
+    assert res_desc_typo2.json()["total"] == 1
+    assert res_desc_typo2.json()["items"][0]["name"] == "Advanced Japanese Kanji"
+
+    # Description multi-word search (exact and fuzzy)
+    res_desc_multi = await async_client.get("/api/v1/community?q=functional groups")
+    assert res_desc_multi.status_code == 200
+    assert res_desc_multi.json()["total"] == 1
+    assert res_desc_multi.json()["items"][0]["name"] == "Organic Chemistry Basics"
+
+    res_desc_multi_fuzzy = await async_client.get("/api/v1/community?q=functionl grups")
+    assert res_desc_multi_fuzzy.status_code == 200
+    assert res_desc_multi_fuzzy.json()["total"] == 1
+    assert res_desc_multi_fuzzy.json()["items"][0]["name"] == "Organic Chemistry Basics"
+
+    # Creator username / display name search (exact and fuzzy)
+    res_author_exact = await async_client.get("/api/v1/community?q=normaluser")
+    assert res_author_exact.status_code == 200
+    assert res_author_exact.json()["total"] >= 3
+
+    res_author_fuzzy = await async_client.get("/api/v1/community?q=normalusr")
+    assert res_author_fuzzy.status_code == 200
+    assert res_author_fuzzy.json()["total"] >= 3
+
+    # Cross-field search (creator name + deck name or description)
+    res_cross1 = await async_client.get("/api/v1/community?q=normaluser kanji")
+    assert res_cross1.status_code == 200
+    assert res_cross1.json()["total"] == 1
+    assert res_cross1.json()["items"][0]["name"] == "Advanced Japanese Kanji"
+
+    res_cross2 = await async_client.get("/api/v1/community?q=normaluser alkanes")
+    assert res_cross2.status_code == 200
+    assert res_cross2.json()["total"] == 1
+    assert res_cross2.json()["items"][0]["name"] == "Organic Chemistry Basics"
 
     # Folder search
     res4 = await async_client.get("/api/v1/community?q=Medical")
     assert res4.status_code == 200
     assert res4.json()["total"] == 1
     assert res4.json()["items"][0]["name"] == "Medical Terminology"
+
+    # Folder description search
+    res_folder_desc = await async_client.get("/api/v1/community?q=clinical terms")
+    assert res_folder_desc.status_code == 200
+    assert res_folder_desc.json()["total"] == 1
+    assert res_folder_desc.json()["items"][0]["name"] == "Medical Terminology"
 
     # Non-matching search
     res5 = await async_client.get("/api/v1/community?q=xyz987completelyunrelated")

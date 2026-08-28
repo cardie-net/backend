@@ -746,3 +746,92 @@ async def test_delete_card_with_srs_progress_success(
         headers={"X-Test-Cookie": guest_token1},
     )
     assert del_resp.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_create_card_text_length_limit(
+    async_client: AsyncClient, guest_token1: str, private_deck_id: int
+):
+    long_text = "a" * 1001
+    response = await async_client.post(
+        f"/api/v1/decks/{private_deck_id}/cards/",
+        json={
+            "front": [{"type": "text", "content": long_text}],
+            "back": [{"type": "text", "content": "Back"}],
+        },
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_update_card_text_length_limit(
+    async_client: AsyncClient, guest_token1: str, private_deck_id: int
+):
+    create_resp = await async_client.post(
+        f"/api/v1/decks/{private_deck_id}/cards/",
+        json={
+            "front": [{"type": "text", "content": "Front"}],
+            "back": [{"type": "text", "content": "Back"}],
+        },
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    card_id = create_resp.json()["id"]
+
+    long_text = "a" * 1001
+    patch_resp = await async_client.patch(
+        f"/api/v1/decks/{private_deck_id}/cards/{card_id}",
+        json={"front": [{"type": "text", "content": long_text}]},
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    assert patch_resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_card_deck_limit_500(
+    async_client: AsyncClient, guest_token1: str, private_deck_id: int
+):
+    # Batch create 500 cards (max allowed)
+    batch_500 = {
+        "cards": [
+            {
+                "front": [{"type": "text", "content": f"F{i}"}],
+                "back": [{"type": "text", "content": f"B{i}"}],
+            }
+            for i in range(500)
+        ]
+    }
+    resp = await async_client.post(
+        f"/api/v1/decks/{private_deck_id}/cards/batch",
+        json=batch_500,
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    assert resp.status_code == 200
+
+    # Attempting to add 501st card should fail with 400
+    single_resp = await async_client.post(
+        f"/api/v1/decks/{private_deck_id}/cards/",
+        json={
+            "front": [{"type": "text", "content": "Over limit"}],
+            "back": [{"type": "text", "content": "Over limit"}],
+        },
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    assert single_resp.status_code == 400
+    assert "500" in single_resp.json()["detail"]
+
+    # Attempting to batch add should also fail with 400
+    batch_resp = await async_client.post(
+        f"/api/v1/decks/{private_deck_id}/cards/batch",
+        json={
+            "cards": [
+                {
+                    "front": [{"type": "text", "content": "F"}],
+                    "back": [{"type": "text", "content": "B"}],
+                }
+            ]
+        },
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    assert batch_resp.status_code == 400
+    assert "500" in batch_resp.json()["detail"]

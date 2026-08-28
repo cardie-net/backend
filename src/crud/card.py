@@ -14,6 +14,13 @@ async def get_card(db: AsyncSession, card_id: uuid.UUID) -> models.Card | None:
     return result.scalar_one_or_none()
 
 
+async def get_card_count_for_deck(db: AsyncSession, deck_id: uuid.UUID) -> int:
+    """Return the total number of cards in a deck."""
+    statement = select(func.count(models.Card.id)).where(models.Card.deck_id == deck_id)
+    result = await db.execute(statement)
+    return result.scalar_one() or 0
+
+
 async def get_cards_for_deck(db: AsyncSession, deck_id: uuid.UUID) -> list[models.Card]:
     """Retrieve all cards within a deck, ordered sequentially."""
     statement = (

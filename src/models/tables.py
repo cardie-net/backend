@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Literal, Optional
+from typing import Annotated, Any, Literal, Optional, Union
 
 from pydantic import field_validator
 from sqlalchemy import (
@@ -16,7 +16,13 @@ from sqlalchemy import (
 from sqlalchemy.orm import column_property
 from sqlmodel import Field, Relationship, SQLModel
 
-from .common import PrivacyLevel, validate_slug
+from .common import (
+    MAX_CARD_TEXT_LENGTH,
+    MAX_NAME_LENGTH,
+    MAX_URL_LENGTH,
+    PrivacyLevel,
+    validate_slug,
+)
 
 
 class UTCDateTime(TypeDecorator):
@@ -41,15 +47,15 @@ class UTCDateTime(TypeDecorator):
 
 class TextElement(SQLModel):
     type: Literal["text"]
-    content: str
+    content: str = Field(max_length=MAX_CARD_TEXT_LENGTH)
 
 
 class ImageElement(SQLModel):
     type: Literal["image"]
-    url: str
+    url: str = Field(max_length=MAX_URL_LENGTH)
 
 
-CardElement = TextElement | ImageElement
+CardElement = Annotated[Union[TextElement, ImageElement], Field(discriminator="type")]
 
 
 # --- OAuth Account ---
@@ -275,13 +281,23 @@ class FolderStar(SQLModel, table=True):
 
 
 class FolderBase(SQLModel):
-    name: str = Field(max_length=80)
+    name: str = Field(min_length=1, max_length=MAX_NAME_LENGTH)
     slug: str = Field(index=True, max_length=80)
     privacy: PrivacyLevel = Field(default=PrivacyLevel.PRIVATE)
     parent_id: uuid.UUID | None = Field(
         default=None, foreign_key="folders.id", ondelete="CASCADE"
     )
     properties: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+
+    @field_validator("name")
+    @classmethod
+    def validate_name_field(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Name cannot be empty or whitespace only")
+        if len(v) > MAX_NAME_LENGTH:
+            raise ValueError(f"Name cannot exceed {MAX_NAME_LENGTH} characters")
+        return v
 
     @field_validator("slug")
     @classmethod
@@ -358,6 +374,37 @@ class CardBase(SQLModel):
     back: list[CardElement] = Field(sa_column=Column(JSON))
     order: int = Field(default=0)
 
+    @field_validator("front", "back")
+    @classmethod
+    def validate_card_side(cls, elements: list[Any]) -> list[Any]:
+        if not isinstance(elements, list):
+            return elements
+        total_text_length = sum(
+            (
+                len(el.content)
+                if isinstance(el, TextElement)
+                else (
+                    len(el.get("content", ""))
+                    if isinstance(el, dict) and el.get("type") == "text"
+                    else 0
+                )
+            )
+            for el in elements
+        )
+        if total_text_length > MAX_CARD_TEXT_LENGTH:
+            raise ValueError(
+                f"Card side text cannot exceed {MAX_CARD_TEXT_LENGTH} characters"
+            )
+        image_count = sum(
+            1
+            for el in elements
+            if isinstance(el, ImageElement)
+            or (isinstance(el, dict) and el.get("type") == "image")
+        )
+        if image_count > 1:
+            raise ValueError("Card side cannot have more than 1 image")
+        return elements
+
 
 class Card(CardBase, table=True):
     __tablename__ = "cards"
@@ -389,13 +436,23 @@ class Card(CardBase, table=True):
 
 
 class DeckBase(SQLModel):
-    name: str = Field(max_length=80)
+    name: str = Field(min_length=1, max_length=MAX_NAME_LENGTH)
     slug: str = Field(index=True, max_length=80)
     privacy: PrivacyLevel = Field(default=PrivacyLevel.PRIVATE)
     folder_id: uuid.UUID | None = Field(
         default=None, foreign_key="folders.id", ondelete="CASCADE"
     )
     properties: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+
+    @field_validator("name")
+    @classmethod
+    def validate_name_field(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Name cannot be empty or whitespace only")
+        if len(v) > MAX_NAME_LENGTH:
+            raise ValueError(f"Name cannot exceed {MAX_NAME_LENGTH} characters")
+        return v
 
     @field_validator("slug")
     @classmethod

@@ -1520,3 +1520,61 @@ async def test_registered_user_can_publish_deck(
     )
     assert patch_resp.status_code == 200
     assert patch_resp.json()["privacy"] == "public"
+
+
+@pytest.mark.asyncio
+async def test_create_deck_name_limits(async_client: AsyncClient, user_token: str):
+    # Empty / whitespace only name
+    resp_empty = await async_client.post(
+        "/api/v1/decks",
+        json={"name": "   ", "privacy": "private"},
+        headers={"X-Test-Cookie": user_token},
+    )
+    assert resp_empty.status_code == 422
+
+    # Name > 80 characters
+    resp_long = await async_client.post(
+        "/api/v1/decks",
+        json={"name": "a" * 81, "privacy": "private"},
+        headers={"X-Test-Cookie": user_token},
+    )
+    assert resp_long.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_deck_description_limit(
+    async_client: AsyncClient, user_token: str
+):
+    # Description > 500 characters
+    resp = await async_client.post(
+        "/api/v1/decks",
+        json={
+            "name": "Valid Deck",
+            "privacy": "private",
+            "properties": {"description": "d" * 501},
+        },
+        headers={"X-Test-Cookie": user_token},
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_import_deck_limit_500_cards(async_client: AsyncClient, user_token: str):
+    # Import deck with 501 cards should be rejected
+    cards_501 = [
+        {
+            "front": [{"type": "text", "content": f"F{i}"}],
+            "back": [{"type": "text", "content": f"B{i}"}],
+        }
+        for i in range(501)
+    ]
+    resp = await async_client.post(
+        "/api/v1/decks/import",
+        json={
+            "name": "Big Import",
+            "privacy": "private",
+            "cards": cards_501,
+        },
+        headers={"X-Test-Cookie": user_token},
+    )
+    assert resp.status_code in (400, 422)

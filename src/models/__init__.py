@@ -1,5 +1,10 @@
 from .common import (
     ALLOWED_SOCIAL_PLATFORMS,
+    MAX_CARD_TEXT_LENGTH,
+    MAX_CARDS_PER_DECK,
+    MAX_DESCRIPTION_LENGTH,
+    MAX_NAME_LENGTH,
+    MAX_URL_LENGTH,
     RESERVED_USERNAMES,
     ItemProperties,
     PrivacyLevel,
@@ -73,6 +78,11 @@ from .tables import (
 
 __all__ = [
     "ALLOWED_SOCIAL_PLATFORMS",
+    "MAX_CARDS_PER_DECK",
+    "MAX_CARD_TEXT_LENGTH",
+    "MAX_DESCRIPTION_LENGTH",
+    "MAX_NAME_LENGTH",
+    "MAX_URL_LENGTH",
     "Card",
     "CardBase",
     "CardBatchCreate",

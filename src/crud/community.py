@@ -1,4 +1,5 @@
 import difflib
+import re
 import uuid
 from typing import Any
 
@@ -9,6 +10,51 @@ from sqlmodel import func, select
 from .. import models
 
 
+def _tokenize(text: str) -> list[str]:
+    """Tokenize text into lower-case alphanumeric words."""
+    if not text:
+        return []
+    return re.findall(r"\b\w+\b", text.lower())
+
+
+def levenshtein_distance(s1: str, s2: str) -> int:
+    """Calculate the Levenshtein edit distance between two strings."""
+    if s1 == s2:
+        return 0
+    if not s1:
+        return len(s2)
+    if not s2:
+        return len(s1)
+
+    if len(s1) < len(s2):
+        s1, s2 = s2, s1
+
+    previous_row = list(range(len(s2) + 1))
+    for i, c1 in enumerate(s1):
+        current_row = [i + 1] + [0] * len(s2)
+        for j, c2 in enumerate(s2):
+            insertions = previous_row[j + 1] + 1
+            deletions = current_row[j] + 1
+            substitutions = previous_row[j] + (c1 != c2)
+            current_row[j + 1] = min(insertions, deletions, substitutions)
+        previous_row = current_row
+
+    return previous_row[-1]
+
+
+def word_similarity(w1: str, w2: str) -> float:
+    """Compute normalized similarity (0.0 to 1.0) between two words based on edit distance and substrings."""
+    if not w1 or not w2:
+        return 0.0
+    if w1 == w2:
+        return 1.0
+    if w1 in w2 or w2 in w1:
+        return min(len(w1), len(w2)) / max(len(w1), len(w2))
+    max_len = max(len(w1), len(w2))
+    dist = levenshtein_distance(w1, w2)
+    return max(0.0, 1.0 - (dist / max_len))
+
+
 def calculate_fuzzy_match_score(
     query: str,
     name: str,
@@ -16,46 +62,99 @@ def calculate_fuzzy_match_score(
     username: str,
     display_name: str,
 ) -> float:
-    """Calculate fuzzy similarity score between a query and an item."""
+    """Calculate fuzzy similarity score between a query and an item across
+    its name, creator username, display name, and description.
+    """
     q = query.strip().lower()
     if not q:
         return 1.0
 
-    name_lower = (name or "").lower()
-    desc_lower = (description or "").lower()
-    user_lower = (username or "").lower()
-    disp_lower = (display_name or "").lower()
+    name_lower = (name or "").strip().lower()
+    desc_lower = (description or "").strip().lower()
+    user_lower = (username or "").strip().lower()
+    disp_lower = (display_name or "").strip().lower()
 
+    # Exact full matches
     if q == name_lower:
         return 1.0
-    if q in name_lower:
-        return 0.95
     if q == user_lower or q == disp_lower:
-        return 0.9
-    if q in user_lower or q in disp_lower:
-        return 0.85
+        return 0.95
+    if desc_lower and q == desc_lower:
+        return 0.90
+
+    # Substring matches (exact substring in fields)
+    if name_lower and q in name_lower:
+        return 0.95
+    if (user_lower and q in user_lower) or (disp_lower and q in disp_lower):
+        return 0.90
     if desc_lower and q in desc_lower:
-        return 0.8
+        return 0.85
 
     scores: list[float] = []
 
-    # Sequence matcher on full fields
-    scores.append(difflib.SequenceMatcher(None, q, name_lower).ratio() * 0.9)
-    scores.append(difflib.SequenceMatcher(None, q, user_lower).ratio() * 0.8)
-    scores.append(difflib.SequenceMatcher(None, q, disp_lower).ratio() * 0.8)
-
-    # Word-level matching for name
-    for word in name_lower.split():
-        scores.append(difflib.SequenceMatcher(None, q, word).ratio() * 0.88)
-
-    # Word-level matching for display name
-    for word in disp_lower.split():
-        scores.append(difflib.SequenceMatcher(None, q, word).ratio() * 0.78)
-
-    # Word-level matching for description
+    # Full field fuzzy matching
+    if name_lower:
+        scores.append(word_similarity(q, name_lower) * 0.92)
+    if user_lower:
+        scores.append(word_similarity(q, user_lower) * 0.88)
+    if disp_lower:
+        scores.append(word_similarity(q, disp_lower) * 0.88)
     if desc_lower:
-        for word in desc_lower.split():
-            scores.append(difflib.SequenceMatcher(None, q, word).ratio() * 0.7)
+        scores.append(word_similarity(q, desc_lower) * 0.82)
+
+    # Word/token lists
+    name_words = _tokenize(name_lower)
+    user_words = _tokenize(user_lower)
+    disp_words = _tokenize(disp_lower)
+    desc_words = _tokenize(desc_lower)
+    q_words = _tokenize(q)
+
+    # 1) Compare single query against single words in all fields
+    for word in name_words:
+        scores.append(word_similarity(q, word) * 0.90)
+    for word in user_words:
+        scores.append(word_similarity(q, word) * 0.88)
+    for word in disp_words:
+        scores.append(word_similarity(q, word) * 0.88)
+    for word in desc_words:
+        scores.append(word_similarity(q, word) * 0.82)
+
+    # 2) If query has multiple tokens, evaluate sliding window matching and multi-token coverage
+    num_q = len(q_words)
+    if num_q > 1:
+        # Sliding window n-grams in name
+        if len(name_words) >= num_q:
+            for i in range(len(name_words) - num_q + 1):
+                window = " ".join(name_words[i : i + num_q])
+                scores.append(word_similarity(q, window) * 0.92)
+
+        # Sliding window n-grams in description
+        if len(desc_words) >= num_q:
+            for i in range(len(desc_words) - num_q + 1):
+                window = " ".join(desc_words[i : i + num_q])
+                scores.append(word_similarity(q, window) * 0.85)
+
+        # Multi-token matching: each token in the query should match at least one word across fields
+        token_scores: list[float] = []
+        for qw in q_words:
+            best_token = 0.0
+            # Check name words
+            for nw in name_words:
+                best_token = max(best_token, word_similarity(qw, nw) * 0.92)
+            # Check creator words
+            for cw in user_words + disp_words:
+                best_token = max(best_token, word_similarity(qw, cw) * 0.88)
+            # Check description words
+            for dw in desc_words:
+                best_token = max(best_token, word_similarity(qw, dw) * 0.82)
+            token_scores.append(best_token)
+
+        if token_scores:
+            min_score = min(token_scores)
+            avg_score = sum(token_scores) / len(token_scores)
+            # Only reward multi-token match if all tokens had a reasonable match (e.g. >= 0.55)
+            if min_score >= 0.55:
+                scores.append(avg_score)
 
     return max(scores) if scores else 0.0
 
