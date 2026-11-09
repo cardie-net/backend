@@ -317,6 +317,28 @@ async def test_upload_avatar(async_client: AsyncClient, user_token: str):
 
 
 @pytest.mark.asyncio
+async def test_upload_avatar_too_large(
+    async_client: AsyncClient,
+    user_token: str,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from src.config import settings
+
+    monkeypatch.setattr(settings, "MAX_UPLOAD_SIZE", 1024)
+
+    files = {"file": ("big.jpg", b"x" * 1025, "image/jpeg")}
+    response = await async_client.post(
+        "/api/v1/users/me/avatar",
+        headers={"X-Test-Cookie": user_token},
+        files=files,
+    )
+    assert response.status_code == 413
+    body = response.json()
+    assert body["detail"] == "File too large"
+    assert body["max_size"] == 1024
+
+
+@pytest.mark.asyncio
 async def test_upload_avatar_guest_forbidden(
     async_client: AsyncClient, guest_token1: str
 ):

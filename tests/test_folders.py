@@ -531,6 +531,34 @@ async def test_upload_folder_cover_success(
         mock_delete.assert_called_once()
 
 
+async def test_upload_folder_cover_too_large(
+    async_client: AsyncClient,
+    guest_token1: str,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from src.config import settings
+
+    create_resp = await async_client.post(
+        "/api/v1/folders",
+        json={"name": "Too Large Folder"},
+        headers={"X-Test-Cookie": guest_token1},
+    )
+    folder_id = create_resp.json()["id"]
+
+    monkeypatch.setattr(settings, "MAX_UPLOAD_SIZE", 1024)
+
+    files = {"file": ("big.jpg", b"x" * 1025, "image/jpeg")}
+    response = await async_client.post(
+        f"/api/v1/folders/{folder_id}/cover",
+        headers={"X-Test-Cookie": guest_token1},
+        files=files,
+    )
+    assert response.status_code == 413
+    body = response.json()
+    assert body["detail"] == "File too large"
+    assert body["max_size"] == 1024
+
+
 async def test_delete_folder_cleans_up_cover_image(
     async_client: AsyncClient, guest_token1: str
 ):

@@ -10,7 +10,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .. import crud, models
 from ..auth.router import current_active_user
 from ..auth.utils import get_optional_current_user
-from ..config import settings
 from ..database import get_db
 from ..services.image_service import collect_image_urls, optimize_image
 from ..services.s3_service import (
@@ -21,7 +20,7 @@ from ..services.s3_service import (
     extract_object_name_from_url,
     upload_file_to_s3,
 )
-from ..utils import enforce_guest_privacy, is_slug_taken
+from ..utils import enforce_guest_privacy, is_slug_taken, read_upload_file
 
 logger = logging.getLogger(__name__)
 
@@ -74,11 +73,9 @@ async def upload_folder_cover(
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File must be an image")
 
-    try:
-        contents = await file.read(settings.MAX_UPLOAD_SIZE + 1)
-        if len(contents) > settings.MAX_UPLOAD_SIZE:
-            raise HTTPException(status_code=413, detail="File too large")
+    contents = await read_upload_file(file)
 
+    try:
         optimized_bytes = await asyncio.to_thread(optimize_image, contents)
 
         old_cover = (

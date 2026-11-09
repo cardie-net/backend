@@ -1,13 +1,26 @@
 import re
 import uuid
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from . import models
+from .config import settings
 
 GUEST_PRIVACY_DETAIL = "Guest accounts can only keep their own items private"
+
+
+class FileTooLargeError(Exception):
+    """Raised when an uploaded file exceeds MAX_UPLOAD_SIZE."""
+
+
+async def read_upload_file(file: UploadFile) -> bytes:
+    """Read an upload while enforcing MAX_UPLOAD_SIZE."""
+    contents = await file.read(settings.MAX_UPLOAD_SIZE + 1)
+    if len(contents) > settings.MAX_UPLOAD_SIZE:
+        raise FileTooLargeError()
+    return contents
 
 
 def enforce_guest_privacy(user: models.User, privacy: models.PrivacyLevel) -> None:

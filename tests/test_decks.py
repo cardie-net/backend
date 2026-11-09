@@ -712,18 +712,48 @@ async def test_delete_deck_cleans_up_card_images(
 
 @pytest.mark.asyncio
 async def test_upload_card_image_too_large(
-    async_client: AsyncClient, guest_token: str, upload_deck_id: str
+    async_client: AsyncClient,
+    guest_token: str,
+    upload_deck_id: str,
+    monkeypatch: pytest.MonkeyPatch,
 ):
     from src.config import settings
 
-    files = {"file": ("big.jpg", b"x" * (settings.MAX_UPLOAD_SIZE + 1), "image/jpeg")}
+    monkeypatch.setattr(settings, "MAX_UPLOAD_SIZE", 1024)
+
+    files = {"file": ("big.jpg", b"x" * 1025, "image/jpeg")}
     response = await async_client.post(
         f"/api/v1/decks/{upload_deck_id}/images",
         headers={"X-Test-Cookie": guest_token},
         files=files,
     )
     assert response.status_code == 413
-    assert response.json()["detail"] == "File too large"
+    body = response.json()
+    assert body["detail"] == "File too large"
+    assert body["max_size"] == 1024
+
+
+@pytest.mark.asyncio
+async def test_upload_deck_cover_too_large(
+    async_client: AsyncClient,
+    guest_token: str,
+    upload_deck_id: str,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from src.config import settings
+
+    monkeypatch.setattr(settings, "MAX_UPLOAD_SIZE", 1024)
+
+    files = {"file": ("big.jpg", b"x" * 1025, "image/jpeg")}
+    response = await async_client.post(
+        f"/api/v1/decks/{upload_deck_id}/cover",
+        headers={"X-Test-Cookie": guest_token},
+        files=files,
+    )
+    assert response.status_code == 413
+    body = response.json()
+    assert body["detail"] == "File too large"
+    assert body["max_size"] == 1024
 
 
 async def test_upload_deck_cover_success(

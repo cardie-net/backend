@@ -18,6 +18,7 @@ from ..services.s3_service import (
     extract_object_name_from_url,
     upload_file_to_s3,
 )
+from ..utils import read_upload_file
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -139,12 +140,12 @@ async def upload_avatar(
             detail="Guest users cannot upload avatars",
         )
 
-    if not file.content_type.startswith("image/"):
+    if not file.content_type or not file.content_type.startswith("image/"):
         raise fastapi.HTTPException(status_code=400, detail="File must be an image")
 
-    try:
-        contents = await file.read()
+    contents = await read_upload_file(file)
 
+    try:
         # Optimize image in a separate thread
         optimized_bytes = await asyncio.to_thread(optimize_image, contents)
 

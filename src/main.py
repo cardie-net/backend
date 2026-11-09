@@ -1,11 +1,13 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from .auth.router import create_auth_router
 from .database import create_db_and_tables
+from .middleware import UploadSizeLimitMiddleware, upload_too_large_response
 from .routers import cards, community, decks, folders, srs, users
+from .utils import FileTooLargeError
 
 
 @asynccontextmanager
@@ -22,6 +24,9 @@ app = FastAPI(
 )
 
 
+# Added before CORS so CORS stays outermost and decorates early 413 responses.
+app.add_middleware(UploadSizeLimitMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -29,6 +34,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(FileTooLargeError)
+async def file_too_large_exception_handler(request: Request, exc: FileTooLargeError):
+    return upload_too_large_response()
+
 
 # --- Auth routes ---
 app.include_router(create_auth_router(), prefix="/api/v1/auth", tags=["auth"])
