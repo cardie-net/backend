@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import uuid
 
 import fastapi
@@ -14,11 +15,20 @@ from ..auth.utils import get_optional_current_user, get_password_hash
 from ..database import get_db
 from ..services.image_service import optimize_image
 from ..services.s3_service import (
+    AVATAR_PREFIX,
     delete_file_from_s3,
     extract_object_name_from_url,
     upload_file_to_s3,
 )
+from ..services.upload_limits import (
+    enforce_storage_quota,
+    enforce_upload_rate_limit,
+    record_upload,
+    release_uploads,
+)
 from ..utils import read_upload_file
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -140,27 +150,30 @@ async def upload_avatar(
             detail="Guest users cannot upload avatars",
         )
 
+    enforce_upload_rate_limit(user.id)
+
     if not file.content_type or not file.content_type.startswith("image/"):
         raise fastapi.HTTPException(status_code=400, detail="File must be an image")
 
     contents = await read_upload_file(file)
+    # Validates the real format, enforces the pixel cap and drops metadata.
+    optimized_bytes = await asyncio.to_thread(optimize_image, contents)
+    await enforce_storage_quota(db, user.id, len(optimized_bytes))
 
     try:
-        # Optimize image in a separate thread
-        optimized_bytes = await asyncio.to_thread(optimize_image, contents)
-
         # Delete old avatar if it exists
-        if user.avatar_url:
-            old_object_name = extract_object_name_from_url(user.avatar_url)
-            if old_object_name:
-                await asyncio.to_thread(delete_file_from_s3, old_object_name)
+        old_object_name = _avatar_object_name(user) if user.avatar_url else None
+        if old_object_name:
+            await asyncio.to_thread(delete_file_from_s3, old_object_name)
 
         # Upload to S3
         file_extension = "webp"
-        object_name = f"avatars/{user.id}/{uuid.uuid4()}.{file_extension}"
+        object_name = f"{AVATAR_PREFIX}{user.id}/{uuid.uuid4()}.{file_extension}"
         avatar_url = await asyncio.to_thread(
             upload_file_to_s3, optimized_bytes, object_name, "image/webp"
         )
+
+        await record_upload(db, user.id, object_name, len(optimized_bytes))
 
         # Update user
         user.avatar_url = avatar_url
@@ -168,9 +181,20 @@ async def upload_avatar(
         await db.commit()
         await db.refresh(user)
 
+        if old_object_name:
+            await release_uploads(db, user.id, [old_object_name])
+
         return _user_to_dict(user)
-    except Exception as e:
-        raise fastapi.HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.error("Failed to upload avatar for user %s", user.id, exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to upload avatar")
+
+
+def _avatar_object_name(user: models.User) -> str | None:
+    """Object key of the user's avatar, only if it lives in their own namespace."""
+    if not user.avatar_url:
+        return None
+    return extract_object_name_from_url(user.avatar_url, f"{AVATAR_PREFIX}{user.id}/")
 
 
 @router.delete("/me/avatar", response_model=models.UserRead)
@@ -186,7 +210,7 @@ async def remove_avatar(
         )
 
     if user.avatar_url:
-        old_object_name = extract_object_name_from_url(user.avatar_url)
+        old_object_name = _avatar_object_name(user)
         if old_object_name:
             await asyncio.to_thread(delete_file_from_s3, old_object_name)
 
@@ -194,6 +218,9 @@ async def remove_avatar(
         db.add(user)
         await db.commit()
         await db.refresh(user)
+
+        if old_object_name:
+            await release_uploads(db, user.id, [old_object_name])
     return _user_to_dict(user)
 
 

@@ -77,7 +77,6 @@ class UserUpdate(BaseModel):
         default=None, min_length=8, max_length=32, pattern=r"^[a-zA-Z0-9_-]+$"
     )
     display_name: str | None = PydanticField(default=None, min_length=1, max_length=80)
-    avatar_url: str | None = None
     bio: str | None = PydanticField(default=None, max_length=500)
     social_links: SocialLinks | None = None
     preferences: UserPreferences | None = None

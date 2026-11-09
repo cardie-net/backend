@@ -72,6 +72,7 @@ from .tables import (
     SRSCardProgress,
     SRSDeckActivation,
     TextElement,
+    UploadedImage,
     User,
     UserDailyActivity,
 )
@@ -128,6 +129,7 @@ __all__ = [
     "SocialLinks",
     "StarResponse",
     "TextElement",
+    "UploadedImage",
     "User",
     "UserActivityRecordRequest",
     "UserActivitySummary",

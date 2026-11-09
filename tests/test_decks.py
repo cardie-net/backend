@@ -590,8 +590,8 @@ async def test_create_deck_invalid_properties(
 
 
 @pytest.fixture
-async def upload_deck_id(async_client: AsyncClient, guest_token: str) -> str:
-    """Creates a private deck owned by guest_token for upload tests."""
+async def upload_deck_id(async_client: AsyncClient, user_token: str) -> str:
+    """Creates a private deck owned by user_token for upload tests."""
     import uuid
 
     response = await async_client.post(
@@ -601,7 +601,7 @@ async def upload_deck_id(async_client: AsyncClient, guest_token: str) -> str:
             "slug": f"upload-deck-{uuid.uuid4().hex[:8]}",
             "privacy": "private",
         },
-        headers={"X-Test-Cookie": guest_token},
+        headers={"X-Test-Cookie": user_token},
     )
     return response.json()["id"]
 
@@ -619,7 +619,7 @@ def _make_image_file() -> tuple[str, bytes, str]:
 
 @pytest.mark.asyncio
 async def test_upload_card_image_success(
-    async_client: AsyncClient, guest_token: str, upload_deck_id: str
+    async_client: AsyncClient, user_token: str, upload_deck_id: str
 ):
     from unittest.mock import patch
 
@@ -631,7 +631,7 @@ async def test_upload_card_image_success(
     ):
         response = await async_client.post(
             f"/api/v1/decks/{upload_deck_id}/images",
-            headers={"X-Test-Cookie": guest_token},
+            headers={"X-Test-Cookie": user_token},
             files=files,
         )
 
@@ -642,12 +642,12 @@ async def test_upload_card_image_success(
 
 @pytest.mark.asyncio
 async def test_upload_card_image_non_image(
-    async_client: AsyncClient, guest_token: str, upload_deck_id: str
+    async_client: AsyncClient, user_token: str, upload_deck_id: str
 ):
     files = {"file": ("a.txt", b"hello", "text/plain")}
     response = await async_client.post(
         f"/api/v1/decks/{upload_deck_id}/images",
-        headers={"X-Test-Cookie": guest_token},
+        headers={"X-Test-Cookie": user_token},
         files=files,
     )
     assert response.status_code == 400
@@ -656,12 +656,12 @@ async def test_upload_card_image_non_image(
 
 @pytest.mark.asyncio
 async def test_upload_card_image_non_owner(
-    async_client: AsyncClient, guest_token2: str, upload_deck_id: str
+    async_client: AsyncClient, user_token2: str, upload_deck_id: str
 ):
     files = {"file": _make_image_file()}
     response = await async_client.post(
         f"/api/v1/decks/{upload_deck_id}/images",
-        headers={"X-Test-Cookie": guest_token2},
+        headers={"X-Test-Cookie": user_token2},
         files=files,
     )
     assert response.status_code == 403
@@ -669,12 +669,12 @@ async def test_upload_card_image_non_owner(
 
 @pytest.mark.asyncio
 async def test_upload_card_image_deck_not_found(
-    async_client: AsyncClient, guest_token: str
+    async_client: AsyncClient, user_token: str
 ):
     files = {"file": _make_image_file()}
     response = await async_client.post(
         "/api/v1/decks/00000000-0000-0000-0000-000000000999/images",
-        headers={"X-Test-Cookie": guest_token},
+        headers={"X-Test-Cookie": user_token},
         files=files,
     )
     assert response.status_code == 404
@@ -682,12 +682,12 @@ async def test_upload_card_image_deck_not_found(
 
 @pytest.mark.asyncio
 async def test_delete_deck_cleans_up_card_images(
-    async_client: AsyncClient, guest_token: str, upload_deck_id: str
+    async_client: AsyncClient, user_token: str, upload_deck_id: str
 ):
     from unittest.mock import patch
 
     me_resp = await async_client.get(
-        "/api/v1/users/me", headers={"X-Test-Cookie": guest_token}
+        "/api/v1/users/me", headers={"X-Test-Cookie": user_token}
     )
     user_id = me_resp.json()["id"]
     managed_url = f"https://cdn.example.com/card-images/{user_id}/deck/c.webp"
@@ -697,14 +697,14 @@ async def test_delete_deck_cleans_up_card_images(
             "front": [{"type": "image", "url": managed_url}],
             "back": [{"type": "text", "content": "back"}],
         },
-        headers={"X-Test-Cookie": guest_token},
+        headers={"X-Test-Cookie": user_token},
     )
     assert card_resp.status_code == 200
 
     with patch("src.routers.decks.delete_managed_images") as mock_del:
         del_resp = await async_client.delete(
             f"/api/v1/decks/{upload_deck_id}",
-            headers={"X-Test-Cookie": guest_token},
+            headers={"X-Test-Cookie": user_token},
         )
     assert del_resp.status_code == 204
     mock_del.assert_called_once_with([managed_url], f"card-images/{user_id}/")
@@ -713,7 +713,7 @@ async def test_delete_deck_cleans_up_card_images(
 @pytest.mark.asyncio
 async def test_upload_card_image_too_large(
     async_client: AsyncClient,
-    guest_token: str,
+    user_token: str,
     upload_deck_id: str,
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -724,7 +724,7 @@ async def test_upload_card_image_too_large(
     files = {"file": ("big.jpg", b"x" * 1025, "image/jpeg")}
     response = await async_client.post(
         f"/api/v1/decks/{upload_deck_id}/images",
-        headers={"X-Test-Cookie": guest_token},
+        headers={"X-Test-Cookie": user_token},
         files=files,
     )
     assert response.status_code == 413
@@ -736,7 +736,7 @@ async def test_upload_card_image_too_large(
 @pytest.mark.asyncio
 async def test_upload_deck_cover_too_large(
     async_client: AsyncClient,
-    guest_token: str,
+    user_token: str,
     upload_deck_id: str,
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -747,7 +747,7 @@ async def test_upload_deck_cover_too_large(
     files = {"file": ("big.jpg", b"x" * 1025, "image/jpeg")}
     response = await async_client.post(
         f"/api/v1/decks/{upload_deck_id}/cover",
-        headers={"X-Test-Cookie": guest_token},
+        headers={"X-Test-Cookie": user_token},
         files=files,
     )
     assert response.status_code == 413
@@ -757,13 +757,19 @@ async def test_upload_deck_cover_too_large(
 
 
 async def test_upload_deck_cover_success(
-    async_client: AsyncClient, guest_token: str, upload_deck_id: str
+    async_client: AsyncClient, user_token: str, upload_deck_id: str
 ):
     from unittest.mock import patch
 
+    me = await async_client.get(
+        "/api/v1/users/me", headers={"X-Test-Cookie": user_token}
+    )
+    user_id = me.json()["id"]
+    cover_url = f"https://s3.com/cover-images/{user_id}/deck/cover.webp"
+
     with patch(
         "src.routers.decks.upload_file_to_s3",
-        return_value="https://s3.com/cover-images/user/deck/cover.webp",
+        return_value=cover_url,
     ) as mock_upload, patch(
         "src.routers.decks.delete_file_from_s3"
     ) as mock_delete, patch(
@@ -772,15 +778,12 @@ async def test_upload_deck_cover_success(
         files = {"file": ("cover.jpg", b"fake_image_content", "image/jpeg")}
         response = await async_client.post(
             f"/api/v1/decks/{upload_deck_id}/cover",
-            headers={"X-Test-Cookie": guest_token},
+            headers={"X-Test-Cookie": user_token},
             files=files,
         )
         assert response.status_code == 200
         data = response.json()
-        assert (
-            data["properties"]["cover_image_url"]
-            == "https://s3.com/cover-images/user/deck/cover.webp"
-        )
+        assert data["properties"]["cover_image_url"] == cover_url
         mock_upload.assert_called_once()
         mock_delete.assert_not_called()
 
@@ -788,7 +791,7 @@ async def test_upload_deck_cover_success(
         files2 = {"file": ("cover2.jpg", b"fake_image_content2", "image/jpeg")}
         response2 = await async_client.post(
             f"/api/v1/decks/{upload_deck_id}/cover",
-            headers={"X-Test-Cookie": guest_token},
+            headers={"X-Test-Cookie": user_token},
             files=files2,
         )
         assert response2.status_code == 200
@@ -796,62 +799,68 @@ async def test_upload_deck_cover_success(
 
 
 async def test_delete_deck_cleans_up_cover_image(
-    async_client: AsyncClient, guest_token: str, upload_deck_id: str
+    async_client: AsyncClient, user_token: str, upload_deck_id: str
 ):
     from unittest.mock import patch
 
-    await async_client.patch(
-        f"/api/v1/decks/{upload_deck_id}",
-        headers={"X-Test-Cookie": guest_token},
-        json={
-            "properties": {
-                "cover_image_url": "https://s3.amazonaws.com/test-bucket/cover-images/test/test.webp"
-            }
-        },
+    me = await async_client.get(
+        "/api/v1/users/me", headers={"X-Test-Cookie": user_token}
     )
+    user_id = me.json()["id"]
+    cover_url = f"https://s3.amazonaws.com/test-bucket/cover-images/{user_id}/test.webp"
+
+    patch_resp = await async_client.patch(
+        f"/api/v1/decks/{upload_deck_id}",
+        headers={"X-Test-Cookie": user_token},
+        json={"properties": {"cover_image_url": cover_url}},
+    )
+    assert patch_resp.status_code == 200
 
     with patch("src.routers.decks.delete_file_from_s3") as mock_del:
         resp = await async_client.delete(
             f"/api/v1/decks/{upload_deck_id}",
-            headers={"X-Test-Cookie": guest_token},
+            headers={"X-Test-Cookie": user_token},
         )
         assert resp.status_code == 204
         mock_del.assert_called_once()
-        assert mock_del.call_args[0][0] == "cover-images/test/test.webp"
+        assert mock_del.call_args[0][0] == f"cover-images/{user_id}/test.webp"
 
 
 async def test_patch_deck_cleans_up_cover_image(
-    async_client: AsyncClient, guest_token: str, upload_deck_id: str
+    async_client: AsyncClient, user_token: str, upload_deck_id: str
 ):
     from unittest.mock import patch
 
-    await async_client.patch(
-        f"/api/v1/decks/{upload_deck_id}",
-        headers={"X-Test-Cookie": guest_token},
-        json={
-            "properties": {
-                "cover_image_url": "https://s3.amazonaws.com/test-bucket/cover-images/test/test.webp"
-            }
-        },
+    me = await async_client.get(
+        "/api/v1/users/me", headers={"X-Test-Cookie": user_token}
     )
+    user_id = me.json()["id"]
+    cover_url = f"https://s3.amazonaws.com/test-bucket/cover-images/{user_id}/test.webp"
+
+    patch_resp = await async_client.patch(
+        f"/api/v1/decks/{upload_deck_id}",
+        headers={"X-Test-Cookie": user_token},
+        json={"properties": {"cover_image_url": cover_url}},
+    )
+    assert patch_resp.status_code == 200
 
     with patch("src.routers.decks.delete_file_from_s3") as mock_del:
         resp = await async_client.patch(
             f"/api/v1/decks/{upload_deck_id}",
-            headers={"X-Test-Cookie": guest_token},
+            headers={"X-Test-Cookie": user_token},
             json={"properties": {"cover_image_url": None}},
         )
         assert resp.status_code == 200
         mock_del.assert_called_once()
-        assert mock_del.call_args[0][0] == "cover-images/test/test.webp"
+        assert mock_del.call_args[0][0] == f"cover-images/{user_id}/test.webp"
 
 
 async def test_patch_deck_description(
-    async_client: AsyncClient, guest_token: str, upload_deck_id: str
+    async_client: AsyncClient, user_token: str, upload_deck_id: str
 ):
     resp = await async_client.patch(
         f"/api/v1/decks/{upload_deck_id}",
-        headers={"X-Test-Cookie": guest_token},
+        headers={"X-Test-Cookie": user_token},
         json={"properties": {"description": "A very nice deck"}},
     )
     assert resp.status_code == 200
@@ -860,7 +869,7 @@ async def test_patch_deck_description(
     # Remove description by setting to None
     resp = await async_client.patch(
         f"/api/v1/decks/{upload_deck_id}",
-        headers={"X-Test-Cookie": guest_token},
+        headers={"X-Test-Cookie": user_token},
         json={"properties": {"description": None}},
     )
     assert resp.status_code == 200
@@ -869,7 +878,7 @@ async def test_patch_deck_description(
     # Re-add and remove by setting to empty string / whitespace
     resp = await async_client.patch(
         f"/api/v1/decks/{upload_deck_id}",
-        headers={"X-Test-Cookie": guest_token},
+        headers={"X-Test-Cookie": user_token},
         json={"properties": {"description": "Another description"}},
     )
     assert resp.status_code == 200
@@ -877,7 +886,7 @@ async def test_patch_deck_description(
 
     resp = await async_client.patch(
         f"/api/v1/decks/{upload_deck_id}",
-        headers={"X-Test-Cookie": guest_token},
+        headers={"X-Test-Cookie": user_token},
         json={"properties": {"description": "   "}},
     )
     assert resp.status_code == 200

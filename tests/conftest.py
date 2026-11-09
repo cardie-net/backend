@@ -93,6 +93,8 @@ async def guest_token2(async_client: AsyncClient) -> str:
 
 @pytest.fixture
 async def user_token(async_client: AsyncClient, mock_send_email) -> str:
+    # A previous fixture's login may have left its session in the cookie jar.
+    async_client.cookies.clear()
     await async_client.post(
         "/api/v1/auth/register",
         json={
@@ -115,6 +117,39 @@ async def user_token(async_client: AsyncClient, mock_send_email) -> str:
         "/api/v1/auth/jwt/login",
         data={
             "username": "normaluser@example.com",
+            "password": "supersecretpassword",
+        },
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    return login_response.cookies.get("cardie_session")
+
+
+@pytest.fixture
+async def user_token2(async_client: AsyncClient, mock_send_email) -> str:
+    """A second verified (non-guest) user, e.g. for cross-user permission tests."""
+    # Drop the first user's session so registration is a clean anonymous request.
+    async_client.cookies.clear()
+    await async_client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "seconduser@example.com",
+            "password": "supersecretpassword",
+            "is_guest": False,
+        },
+    )
+
+    import re
+
+    content = mock_send_email.call_args[0][2]
+    match = re.search(r"code: (\w+)", content)
+    captured_token = match.group(1) if match else None
+
+    await async_client.post("/api/v1/auth/verify", json={"token": captured_token})
+
+    login_response = await async_client.post(
+        "/api/v1/auth/jwt/login",
+        data={
+            "username": "seconduser@example.com",
             "password": "supersecretpassword",
         },
         headers={"Content-Type": "application/x-www-form-urlencoded"},

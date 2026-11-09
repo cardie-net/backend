@@ -658,3 +658,24 @@ class UserDailyActivity(SQLModel, table=True):
     details: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
 
     user: Optional["User"] = Relationship(back_populates="daily_activities")
+
+
+# --- Upload Accounting ---
+
+
+class UploadedImage(SQLModel, table=True):
+    """An S3 object stored through the upload endpoints, for per-user quotas."""
+
+    __tablename__ = "uploaded_images"
+
+    key: str = Field(primary_key=True, max_length=MAX_URL_LENGTH)
+    user_id: uuid.UUID = Field(foreign_key="user.id", index=True, ondelete="CASCADE")
+    size_bytes: int
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(
+            UTCDateTime,
+            nullable=False,
+            default=lambda: datetime.now(timezone.utc),
+        ),
+    )

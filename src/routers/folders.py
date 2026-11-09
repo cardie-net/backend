@@ -18,9 +18,21 @@ from ..services.s3_service import (
     delete_file_from_s3,
     delete_managed_images,
     extract_object_name_from_url,
+    extract_object_names,
     upload_file_to_s3,
 )
-from ..utils import enforce_guest_privacy, is_slug_taken, read_upload_file
+from ..services.upload_limits import (
+    enforce_storage_quota,
+    enforce_upload_rate_limit,
+    record_upload,
+    release_uploads,
+)
+from ..utils import (
+    enforce_guest_privacy,
+    enforce_managed_cover_url,
+    is_slug_taken,
+    read_upload_file,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +60,9 @@ async def create_folder(
 
     enforce_guest_privacy(user, folder.privacy)
 
+    if folder.properties:
+        enforce_managed_cover_url(user, folder.properties.cover_image_url)
+
     try:
         return await crud.create_folder_for_user(db=db, folder=folder, user_id=user.id)
     except sqlalchemy.exc.IntegrityError as exc:
@@ -70,14 +85,18 @@ async def upload_folder_cover(
         raise HTTPException(status_code=404, detail="Folder not found")
     if db_folder.user_id != user.id:
         raise HTTPException(status_code=403, detail="Not enough permissions")
+    if user.is_guest:
+        raise HTTPException(status_code=403, detail="Guest users cannot upload images")
+    enforce_upload_rate_limit(user.id)
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File must be an image")
 
     contents = await read_upload_file(file)
+    # Validates the real format, enforces the pixel cap and drops metadata.
+    optimized_bytes = await asyncio.to_thread(optimize_image, contents)
+    await enforce_storage_quota(db, user.id, len(optimized_bytes))
 
     try:
-        optimized_bytes = await asyncio.to_thread(optimize_image, contents)
-
         old_cover = (
             db_folder.properties.get("cover_image_url")
             if db_folder.properties
@@ -88,6 +107,7 @@ async def upload_folder_cover(
         image_url = await asyncio.to_thread(
             upload_file_to_s3, optimized_bytes, object_name, "image/webp"
         )
+        await record_upload(db, user.id, object_name, len(optimized_bytes))
 
         properties = dict(db_folder.properties) if db_folder.properties else {}
         properties["cover_image_url"] = image_url
@@ -98,14 +118,18 @@ async def upload_folder_cover(
             db=db, folder_id=folder_id, folder_update=folder_update
         )
 
-        if old_cover:
-            old_cover_obj = extract_object_name_from_url(old_cover, COVER_IMAGE_PREFIX)
-            if old_cover_obj:
-                await asyncio.to_thread(delete_file_from_s3, old_cover_obj)
+        old_cover_obj = (
+            extract_object_name_from_url(
+                old_cover, f"{COVER_IMAGE_PREFIX}{db_folder.user_id}/"
+            )
+            if old_cover
+            else None
+        )
+        if old_cover_obj:
+            await asyncio.to_thread(delete_file_from_s3, old_cover_obj)
+            await release_uploads(db, user.id, [old_cover_obj])
 
         return updated_folder
-    except HTTPException:
-        raise
     except Exception as e:
         logger.error(f"Failed to upload folder cover: {e}")
         raise HTTPException(status_code=500, detail="Failed to upload image")
@@ -182,6 +206,9 @@ async def update_folder(
     ):
         enforce_guest_privacy(user, folder_update.privacy)
 
+    if folder_update.properties:
+        enforce_managed_cover_url(user, folder_update.properties.cover_image_url)
+
     try:
         old_cover = (
             db_folder.properties.get("cover_image_url")
@@ -199,9 +226,12 @@ async def update_folder(
             else None
         )
         if old_cover and old_cover != new_cover:
-            old_cover_obj = extract_object_name_from_url(old_cover, COVER_IMAGE_PREFIX)
+            old_cover_obj = extract_object_name_from_url(
+                old_cover, f"{COVER_IMAGE_PREFIX}{user.id}/"
+            )
             if old_cover_obj:
                 await asyncio.to_thread(delete_file_from_s3, old_cover_obj)
+                await release_uploads(db, user.id, [old_cover_obj])
 
         return updated_folder
     except sqlalchemy.exc.IntegrityError as exc:
@@ -247,12 +277,19 @@ async def delete_folder(
     if not success:
         raise HTTPException(status_code=404, detail="Folder not found")
 
+    cover_keys = extract_object_names(cover_urls, f"{COVER_IMAGE_PREFIX}{user.id}/")
+    card_keys = extract_object_names(card_urls, f"{CARD_IMAGE_PREFIX}{user.id}/")
+
     if cover_urls:
-        await asyncio.to_thread(delete_managed_images, cover_urls, COVER_IMAGE_PREFIX)
+        await asyncio.to_thread(
+            delete_managed_images, cover_urls, f"{COVER_IMAGE_PREFIX}{user.id}/"
+        )
     if card_urls:
         await asyncio.to_thread(
             delete_managed_images, card_urls, f"{CARD_IMAGE_PREFIX}{user.id}/"
         )
+
+    await release_uploads(db, user.id, cover_keys + card_keys)
 
     return None
 

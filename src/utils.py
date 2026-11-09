@@ -7,6 +7,7 @@ from sqlmodel import select
 
 from . import models
 from .config import settings
+from .services.s3_service import COVER_IMAGE_PREFIX
 
 GUEST_PRIVACY_DETAIL = "Guest accounts can only keep their own items private"
 
@@ -29,6 +30,15 @@ def enforce_guest_privacy(user: models.User, privacy: models.PrivacyLevel) -> No
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=GUEST_PRIVACY_DETAIL,
+        )
+
+
+def enforce_managed_cover_url(user: models.User, url: str | None) -> None:
+    """Raise 400 when a cover URL is not inside the user's own S3 namespace."""
+    if url and f"{COVER_IMAGE_PREFIX}{user.id}/" not in url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid cover image URL",
         )
 
 

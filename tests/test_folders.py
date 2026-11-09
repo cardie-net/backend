@@ -484,22 +484,26 @@ async def test_create_folder_invalid_properties(
     assert response2.status_code == 422
 
 
-async def test_upload_folder_cover_success(
-    async_client: AsyncClient, guest_token1: str
-):
+async def test_upload_folder_cover_success(async_client: AsyncClient, user_token: str):
     from unittest.mock import patch
+
+    me = await async_client.get(
+        "/api/v1/users/me", headers={"X-Test-Cookie": user_token}
+    )
+    user_id = me.json()["id"]
+    cover_url = f"https://s3.com/cover-images/{user_id}/folder/cover.webp"
 
     # Create a folder
     create_resp = await async_client.post(
         "/api/v1/folders",
         json={"name": "Test Folder"},
-        headers={"X-Test-Cookie": guest_token1},
+        headers={"X-Test-Cookie": user_token},
     )
     folder_id = create_resp.json()["id"]
 
     with patch(
         "src.routers.folders.upload_file_to_s3",
-        return_value="https://s3.com/cover-images/folder/cover.webp",
+        return_value=cover_url,
     ) as mock_upload, patch(
         "src.routers.folders.delete_file_from_s3"
     ) as mock_delete, patch(
@@ -508,15 +512,12 @@ async def test_upload_folder_cover_success(
         files = {"file": ("cover.jpg", b"fake_image_content", "image/jpeg")}
         response = await async_client.post(
             f"/api/v1/folders/{folder_id}/cover",
-            headers={"X-Test-Cookie": guest_token1},
+            headers={"X-Test-Cookie": user_token},
             files=files,
         )
         assert response.status_code == 200
         data = response.json()
-        assert (
-            data["properties"]["cover_image_url"]
-            == "https://s3.com/cover-images/folder/cover.webp"
-        )
+        assert data["properties"]["cover_image_url"] == cover_url
         mock_upload.assert_called_once()
         mock_delete.assert_not_called()
 
@@ -524,7 +525,7 @@ async def test_upload_folder_cover_success(
         files2 = {"file": ("cover2.jpg", b"fake_image_content2", "image/jpeg")}
         response2 = await async_client.post(
             f"/api/v1/folders/{folder_id}/cover",
-            headers={"X-Test-Cookie": guest_token1},
+            headers={"X-Test-Cookie": user_token},
             files=files2,
         )
         assert response2.status_code == 200
@@ -533,7 +534,7 @@ async def test_upload_folder_cover_success(
 
 async def test_upload_folder_cover_too_large(
     async_client: AsyncClient,
-    guest_token1: str,
+    user_token: str,
     monkeypatch: pytest.MonkeyPatch,
 ):
     from src.config import settings
@@ -541,7 +542,7 @@ async def test_upload_folder_cover_too_large(
     create_resp = await async_client.post(
         "/api/v1/folders",
         json={"name": "Too Large Folder"},
-        headers={"X-Test-Cookie": guest_token1},
+        headers={"X-Test-Cookie": user_token},
     )
     folder_id = create_resp.json()["id"]
 
@@ -550,7 +551,7 @@ async def test_upload_folder_cover_too_large(
     files = {"file": ("big.jpg", b"x" * 1025, "image/jpeg")}
     response = await async_client.post(
         f"/api/v1/folders/{folder_id}/cover",
-        headers={"X-Test-Cookie": guest_token1},
+        headers={"X-Test-Cookie": user_token},
         files=files,
     )
     assert response.status_code == 413
@@ -564,6 +565,12 @@ async def test_delete_folder_cleans_up_cover_image(
 ):
     from unittest.mock import patch
 
+    me = await async_client.get(
+        "/api/v1/users/me", headers={"X-Test-Cookie": guest_token1}
+    )
+    user_id = me.json()["id"]
+    cover_url = f"https://s3.amazonaws.com/test-bucket/cover-images/{user_id}/test.webp"
+
     create_resp = await async_client.post(
         "/api/v1/folders",
         json={"name": "Test Folder"},
@@ -571,15 +578,12 @@ async def test_delete_folder_cleans_up_cover_image(
     )
     folder_id = create_resp.json()["id"]
 
-    await async_client.patch(
+    patch_resp = await async_client.patch(
         f"/api/v1/folders/{folder_id}",
         headers={"X-Test-Cookie": guest_token1},
-        json={
-            "properties": {
-                "cover_image_url": "https://s3.amazonaws.com/test-bucket/cover-images/test/test.webp"
-            }
-        },
+        json={"properties": {"cover_image_url": cover_url}},
     )
+    assert patch_resp.status_code == 200
 
     with patch("src.routers.folders.delete_managed_images") as mock_del:
         resp = await async_client.delete(
@@ -587,16 +591,19 @@ async def test_delete_folder_cleans_up_cover_image(
             headers={"X-Test-Cookie": guest_token1},
         )
         assert resp.status_code == 204
-        mock_del.assert_any_call(
-            ["https://s3.amazonaws.com/test-bucket/cover-images/test/test.webp"],
-            "cover-images/",
-        )
+        mock_del.assert_any_call([cover_url], f"cover-images/{user_id}/")
 
 
 async def test_patch_folder_cleans_up_cover_image(
     async_client: AsyncClient, guest_token1: str
 ):
     from unittest.mock import patch
+
+    me = await async_client.get(
+        "/api/v1/users/me", headers={"X-Test-Cookie": guest_token1}
+    )
+    user_id = me.json()["id"]
+    cover_url = f"https://s3.amazonaws.com/test-bucket/cover-images/{user_id}/test.webp"
 
     create_resp = await async_client.post(
         "/api/v1/folders",
@@ -605,15 +612,12 @@ async def test_patch_folder_cleans_up_cover_image(
     )
     folder_id = create_resp.json()["id"]
 
-    await async_client.patch(
+    patch_resp = await async_client.patch(
         f"/api/v1/folders/{folder_id}",
         headers={"X-Test-Cookie": guest_token1},
-        json={
-            "properties": {
-                "cover_image_url": "https://s3.amazonaws.com/test-bucket/cover-images/test/test.webp"
-            }
-        },
+        json={"properties": {"cover_image_url": cover_url}},
     )
+    assert patch_resp.status_code == 200
 
     with patch("src.routers.folders.delete_file_from_s3") as mock_del:
         resp = await async_client.patch(
@@ -623,7 +627,7 @@ async def test_patch_folder_cleans_up_cover_image(
         )
         assert resp.status_code == 200
         mock_del.assert_called_once()
-        assert mock_del.call_args[0][0] == "cover-images/test/test.webp"
+        assert mock_del.call_args[0][0] == f"cover-images/{user_id}/test.webp"
 
 
 async def test_patch_folder_description(async_client: AsyncClient, guest_token1: str):

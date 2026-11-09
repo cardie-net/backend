@@ -2,11 +2,14 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from .auth.router import create_auth_router
+from .config import settings
 from .database import create_db_and_tables
 from .middleware import UploadSizeLimitMiddleware, upload_too_large_response
 from .routers import cards, community, decks, folders, srs, users
+from .services.image_service import ImageTooLargeError, UnsupportedImageError
 from .utils import FileTooLargeError
 
 
@@ -39,6 +42,28 @@ app.add_middleware(
 @app.exception_handler(FileTooLargeError)
 async def file_too_large_exception_handler(request: Request, exc: FileTooLargeError):
     return upload_too_large_response()
+
+
+@app.exception_handler(UnsupportedImageError)
+async def unsupported_image_handler(
+    request: Request, exc: UnsupportedImageError
+) -> JSONResponse:
+    """Reject uploads that are not decodable images in an allowed format."""
+    return JSONResponse(status_code=415, content={"detail": "Unsupported image file"})
+
+
+@app.exception_handler(ImageTooLargeError)
+async def image_too_large_handler(
+    request: Request, exc: ImageTooLargeError
+) -> JSONResponse:
+    """Reject images whose decoded pixel count exceeds MAX_IMAGE_PIXELS."""
+    return JSONResponse(
+        status_code=413,
+        content={
+            "detail": "Image dimensions too large",
+            "max_pixels": settings.MAX_IMAGE_PIXELS,
+        },
+    )
 
 
 # --- Auth routes ---

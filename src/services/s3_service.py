@@ -67,6 +67,16 @@ def extract_object_name_from_url(url: str, prefix: str | None = None) -> str | N
     return None
 
 
+def extract_object_names(urls: list[str], prefix: str) -> list[str]:
+    """Object keys for every URL that points inside the given managed prefix."""
+    names: list[str] = []
+    for url in urls:
+        object_name = extract_object_name_from_url(url, prefix)
+        if object_name:
+            names.append(object_name)
+    return names
+
+
 def delete_managed_images(urls: list[str], prefix: str | None = None) -> None:
     """Best-effort delete of S3 objects referenced by managed image URLs."""
     if prefix is None:

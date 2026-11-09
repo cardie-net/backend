@@ -13,6 +13,12 @@ class Settings(BaseSettings):
     IMAGE_QUALITY: int = 80
     CARD_IMAGE_MAX_SIZE: int = 1024
     MAX_UPLOAD_SIZE: int = 10 * 1024 * 1024  # 10 MB
+    # Upper bound on decoded pixels per upload. A tiny compressed file can
+    # otherwise expand into hundreds of MiB of decoder memory.
+    MAX_IMAGE_PIXELS: int = 40_000_000
+    # Upload abuse limits: total stored image bytes per user and uploads/minute.
+    MAX_USER_STORAGE_BYTES: int = 100 * 1024 * 1024  # 100 MB
+    UPLOAD_RATE_LIMIT_PER_MINUTE: int = 20
 
     # Email Settings
     SMTP_SERVER: str = ""

@@ -20,9 +20,21 @@ from ..services.s3_service import (
     delete_file_from_s3,
     delete_managed_images,
     extract_object_name_from_url,
+    extract_object_names,
     upload_file_to_s3,
 )
-from ..utils import enforce_guest_privacy, is_slug_taken, read_upload_file
+from ..services.upload_limits import (
+    enforce_storage_quota,
+    enforce_upload_rate_limit,
+    record_upload,
+    release_uploads,
+)
+from ..utils import (
+    enforce_guest_privacy,
+    enforce_managed_cover_url,
+    is_slug_taken,
+    read_upload_file,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +61,9 @@ async def create_deck(
         )
 
     enforce_guest_privacy(user, deck.privacy)
+
+    if deck.properties:
+        enforce_managed_cover_url(user, deck.properties.cover_image_url)
 
     try:
         return await crud.create_deck_for_user(db=db, deck=deck, user_id=user.id)
@@ -82,6 +97,9 @@ async def import_deck(
 
     enforce_guest_privacy(user, deck_import.privacy)
 
+    if deck_import.properties:
+        enforce_managed_cover_url(user, deck_import.properties.cover_image_url)
+
     if len(deck_import.cards) > models.MAX_CARDS_PER_DECK:
         raise HTTPException(
             status_code=400,
@@ -112,28 +130,30 @@ async def upload_card_image(
         raise HTTPException(status_code=404, detail="Deck not found")
     if db_deck.user_id != user.id:
         raise HTTPException(status_code=403, detail="Not enough permissions")
+    if user.is_guest:
+        raise HTTPException(status_code=403, detail="Guest users cannot upload images")
+    enforce_upload_rate_limit(user.id)
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File must be an image")
 
     contents = await read_upload_file(file)
+    # Validates the real format, enforces the pixel cap and drops metadata.
+    optimized_bytes = await asyncio.to_thread(
+        optimize_image,
+        contents,
+        max_size=(settings.CARD_IMAGE_MAX_SIZE, settings.CARD_IMAGE_MAX_SIZE),
+    )
+    await enforce_storage_quota(db, user.id, len(optimized_bytes))
 
     try:
-        # Optimize image in a separate thread
-        optimized_bytes = await asyncio.to_thread(
-            optimize_image,
-            contents,
-            max_size=(settings.CARD_IMAGE_MAX_SIZE, settings.CARD_IMAGE_MAX_SIZE),
-        )
-
         # Upload to S3
         object_name = f"{CARD_IMAGE_PREFIX}{user.id}/{deck_id}/{uuid.uuid4()}.webp"
         image_url = await asyncio.to_thread(
             upload_file_to_s3, optimized_bytes, object_name, "image/webp"
         )
+        await record_upload(db, user.id, object_name, len(optimized_bytes))
 
         return {"url": image_url}
-    except HTTPException:
-        raise
     except Exception as e:
         logger.error(f"Failed to upload card image: {e}")
         raise HTTPException(status_code=500, detail="Failed to upload image")
@@ -152,14 +172,18 @@ async def upload_deck_cover(
         raise HTTPException(status_code=404, detail="Deck not found")
     if db_deck.user_id != user.id:
         raise HTTPException(status_code=403, detail="Not enough permissions")
+    if user.is_guest:
+        raise HTTPException(status_code=403, detail="Guest users cannot upload images")
+    enforce_upload_rate_limit(user.id)
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File must be an image")
 
     contents = await read_upload_file(file)
+    # Validates the real format, enforces the pixel cap and drops metadata.
+    optimized_bytes = await asyncio.to_thread(optimize_image, contents)
+    await enforce_storage_quota(db, user.id, len(optimized_bytes))
 
     try:
-        optimized_bytes = await asyncio.to_thread(optimize_image, contents)
-
         old_cover = (
             db_deck.properties.get("cover_image_url") if db_deck.properties else None
         )
@@ -168,6 +192,7 @@ async def upload_deck_cover(
         image_url = await asyncio.to_thread(
             upload_file_to_s3, optimized_bytes, object_name, "image/webp"
         )
+        await record_upload(db, user.id, object_name, len(optimized_bytes))
 
         properties = dict(db_deck.properties) if db_deck.properties else {}
         properties["cover_image_url"] = image_url
@@ -176,14 +201,18 @@ async def upload_deck_cover(
             db=db, db_deck=db_deck, deck_update=deck_update
         )
 
-        if old_cover:
-            old_cover_obj = extract_object_name_from_url(old_cover, COVER_IMAGE_PREFIX)
-            if old_cover_obj:
-                await asyncio.to_thread(delete_file_from_s3, old_cover_obj)
+        old_cover_obj = (
+            extract_object_name_from_url(
+                old_cover, f"{COVER_IMAGE_PREFIX}{db_deck.user_id}/"
+            )
+            if old_cover
+            else None
+        )
+        if old_cover_obj:
+            await asyncio.to_thread(delete_file_from_s3, old_cover_obj)
+            await release_uploads(db, user.id, [old_cover_obj])
 
         return updated_deck
-    except HTTPException:
-        raise
     except Exception as e:
         logger.error(f"Failed to upload deck cover: {e}")
         raise HTTPException(status_code=500, detail="Failed to upload image")
@@ -283,6 +312,12 @@ async def delete_deck(
     old_cover = (
         db_deck.properties.get("cover_image_url") if db_deck.properties else None
     )
+    card_keys = extract_object_names(card_urls, f"{CARD_IMAGE_PREFIX}{user.id}/")
+    old_cover_obj = (
+        extract_object_name_from_url(old_cover, f"{COVER_IMAGE_PREFIX}{user.id}/")
+        if old_cover
+        else None
+    )
 
     await crud.delete_deck(db=db, db_deck=db_deck)
 
@@ -292,10 +327,12 @@ async def delete_deck(
             card_urls,
             f"{CARD_IMAGE_PREFIX}{user.id}/",
         )
-    if old_cover:
-        old_cover_obj = extract_object_name_from_url(old_cover, COVER_IMAGE_PREFIX)
-        if old_cover_obj:
-            await asyncio.to_thread(delete_file_from_s3, old_cover_obj)
+    if old_cover_obj:
+        await asyncio.to_thread(delete_file_from_s3, old_cover_obj)
+
+    await release_uploads(
+        db, user.id, card_keys + ([old_cover_obj] if old_cover_obj else [])
+    )
 
     return None
 
@@ -331,6 +368,9 @@ async def update_deck(
     if deck_update.privacy is not None and "privacy" in deck_update.model_fields_set:
         enforce_guest_privacy(user, deck_update.privacy)
 
+    if deck_update.properties:
+        enforce_managed_cover_url(user, deck_update.properties.cover_image_url)
+
     try:
         old_cover = (
             db_deck.properties.get("cover_image_url") if db_deck.properties else None
@@ -346,9 +386,12 @@ async def update_deck(
             else None
         )
         if old_cover and old_cover != new_cover:
-            old_cover_obj = extract_object_name_from_url(old_cover, COVER_IMAGE_PREFIX)
+            old_cover_obj = extract_object_name_from_url(
+                old_cover, f"{COVER_IMAGE_PREFIX}{user.id}/"
+            )
             if old_cover_obj:
                 await asyncio.to_thread(delete_file_from_s3, old_cover_obj)
+                await release_uploads(db, user.id, [old_cover_obj])
 
         return updated_deck
     except sqlalchemy.exc.IntegrityError as exc:
