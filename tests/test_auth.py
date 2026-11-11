@@ -1,4 +1,6 @@
+import re
 import uuid
+from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -8,7 +10,7 @@ from sqlmodel import select
 
 from src.auth import google_oauth_router
 from src.auth.service import handle_oauth_callback
-from src.models import Deck, OAuthAccount, User
+from src.models import Deck, OAuthAccount, PendingRegistration, User
 from tests.conftest import extract_email_token
 
 
@@ -660,3 +662,115 @@ async def test_oauth_authorize_cookie_secure_flag(
     )
     assert response.status_code == 307
     assert "Secure" in response.headers["set-cookie"]
+
+
+async def _stage_registration(
+    async_client: AsyncClient, mock_send_email, email: str, password: str
+) -> str:
+    """Register email and return the verification token from the captured mail."""
+    await async_client.post(
+        "/api/v1/auth/register", json={"email": email, "password": password}
+    )
+    return extract_email_token(mock_send_email)
+
+
+async def _expire_pending(async_session: AsyncSession, email: str, expires_at):
+    """Overwrite the staged registration's expiry (None simulates a legacy row)."""
+    pending = (
+        (
+            await async_session.execute(
+                select(PendingRegistration).where(PendingRegistration.email == email)
+            )
+        )
+        .unique()
+        .scalars()
+        .first()
+    )
+    pending.expires_at = expires_at
+    async_session.add(pending)
+    await async_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_verification_token_is_long_and_url_safe(
+    async_client: AsyncClient, mock_send_email
+):
+    token = await _stage_registration(
+        async_client, mock_send_email, "token-shape@example.com", "supersecretpassword"
+    )
+
+    assert token is not None
+    assert len(token) >= 40
+    assert re.fullmatch(r"[A-Za-z0-9_-]+", token)
+
+
+@pytest.mark.asyncio
+async def test_expired_pending_registration_cannot_be_verified(
+    async_client: AsyncClient, async_session: AsyncSession, mock_send_email
+):
+    email = "expired-pending@example.com"
+    token = await _stage_registration(
+        async_client, mock_send_email, email, "supersecretpassword"
+    )
+    await _expire_pending(
+        async_session, email, datetime.now(timezone.utc) - timedelta(minutes=1)
+    )
+
+    verify = await async_client.post("/api/v1/auth/verify", json={"token": token})
+    assert verify.status_code == 400
+    assert verify.json()["detail"] == "VERIFY_USER_BAD_TOKEN"
+
+    # The expired staging released the address: a fresh signup is accepted.
+    again = await async_client.post(
+        "/api/v1/auth/register",
+        json={"email": email, "password": "anotherpassword"},
+    )
+    assert again.status_code == 202
+
+
+@pytest.mark.asyncio
+async def test_pending_registration_without_expiry_is_rejected(
+    async_client: AsyncClient, async_session: AsyncSession, mock_send_email
+):
+    """Rows written before expiry tracking existed count as expired."""
+    email = "legacy-pending@example.com"
+    token = await _stage_registration(
+        async_client, mock_send_email, email, "supersecretpassword"
+    )
+    await _expire_pending(async_session, email, None)
+
+    verify = await async_client.post("/api/v1/auth/verify", json={"token": token})
+    assert verify.status_code == 400
+    assert verify.json()["detail"] == "VERIFY_USER_BAD_TOKEN"
+
+
+@pytest.mark.asyncio
+async def test_reset_token_expires(
+    async_client: AsyncClient, async_session: AsyncSession, mock_send_email
+):
+    email = "expired-reset@example.com"
+    token = await _stage_registration(
+        async_client, mock_send_email, email, "oldpassword123"
+    )
+    await async_client.post("/api/v1/auth/verify", json={"token": token})
+
+    mock_send_email.reset_mock()
+    await async_client.post("/api/v1/auth/forgot-password", json={"email": email})
+    reset_token = extract_email_token(mock_send_email)
+
+    user = (
+        (await async_session.execute(select(User).where(User.email == email)))
+        .unique()
+        .scalars()
+        .first()
+    )
+    user.reset_password_expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+    async_session.add(user)
+    await async_session.commit()
+
+    response = await async_client.post(
+        "/api/v1/auth/reset-password",
+        json={"token": reset_token, "password": "brandnewpassword"},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "RESET_PASSWORD_BAD_TOKEN"

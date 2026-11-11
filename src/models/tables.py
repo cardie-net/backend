@@ -94,6 +94,12 @@ class PendingRegistration(SQLModel, table=True):
     guest_user_id: uuid.UUID = Field(
         foreign_key="user.id", index=True, ondelete="CASCADE"
     )
+    # Staged signups expire so an abandoned or squatted address is released.
+    # Rows written before this column existed hold NULL and count as expired.
+    expires_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(UTCDateTime, nullable=True),
+    )
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
         sa_column=Column(
@@ -119,6 +125,10 @@ class User(SQLModel, table=True):
     is_guest: bool = Field(default=False)
     email_verification_token: str | None = Field(default=None, index=True, unique=True)
     reset_password_token: str | None = Field(default=None, index=True, unique=True)
+    reset_password_expires_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(UTCDateTime, nullable=True),
+    )
     username: str = Field(unique=True, index=True, max_length=32)
     display_name: str = Field(max_length=80)
     avatar_url: str | None = Field(default=None)

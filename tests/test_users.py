@@ -260,6 +260,14 @@ async def test_get_user_profile_success(async_client: AsyncClient, user_token: s
     assert profile_data["username"] == username
     assert profile_data["id"] == user_data["id"]
 
+    # The owner still sees their own account fields on /me ...
+    assert user_data["email"]
+    assert "preferences" in user_data
+
+    # ... but the public profile must not leak them.
+    for field in ("email", "is_superuser", "last_active_at", "preferences"):
+        assert field not in profile_data
+
 
 @pytest.mark.asyncio
 async def test_get_guest_user_profile_returns_404(
@@ -392,6 +400,8 @@ async def test_get_user_profile_default_properties(
     assert profile_data["bio"] is None or profile_data["bio"] == ""
     assert "social_links" in profile_data
     assert profile_data["social_links"] == {} or profile_data["social_links"] is None
+    for field in ("email", "is_superuser", "last_active_at", "preferences"):
+        assert field not in profile_data
 
 
 @pytest.mark.asyncio
@@ -660,15 +670,18 @@ async def test_user_profile_timestamps(async_client: AsyncClient, user_token: st
         "/api/v1/users/me",
         headers={"X-Test-Cookie": user_token},
     )
-    username = me_response.json()["username"]
+    me_data = me_response.json()
+    username = me_data["username"]
 
     profile_response = await async_client.get(f"/api/v1/users/profile/{username}")
     assert profile_response.status_code == 200
     profile_data = profile_response.json()
     assert "created_at" in profile_data
     assert profile_data["created_at"] is not None
-    assert "last_active_at" in profile_data
-    assert profile_data["last_active_at"] is not None
+    # Activity timestamps are account metadata: owner-only.
+    assert "last_active_at" in me_data
+    assert me_data["last_active_at"] is not None
+    assert "last_active_at" not in profile_data
 
 
 @pytest.mark.asyncio

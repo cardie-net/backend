@@ -53,6 +53,20 @@ def _user_to_dict(user: models.User) -> dict:
     }
 
 
+def _public_user_dict(user: models.User) -> dict:
+    """Profile fields safe to expose publicly; never email or account state."""
+    props = user.properties or {}
+    return {
+        "id": user.id,
+        "username": user.username,
+        "display_name": user.display_name,
+        "avatar_url": user.avatar_url,
+        "created_at": user.created_at,
+        "bio": props.get("bio"),
+        "social_links": props.get("social_links"),
+    }
+
+
 @router.get("/me", response_model=models.UserRead)
 async def get_current_user(user: models.User = Depends(current_active_user)) -> dict:
     """Retrieve the currently authenticated user."""
@@ -224,7 +238,7 @@ async def remove_avatar(
     return _user_to_dict(user)
 
 
-@router.get("/profile/{username}", response_model=models.UserRead)
+@router.get("/profile/{username}", response_model=models.UserPublicRead)
 async def get_user_profile(
     username: str,
     db: AsyncSession = Depends(get_db),
@@ -236,7 +250,7 @@ async def get_user_profile(
     user = result.scalars().first()
     if not user or user.is_guest:
         raise HTTPException(status_code=404, detail="User not found")
-    return _user_to_dict(user)
+    return _public_user_dict(user)
 
 
 @router.get("/profile/{username}/decks/{deck_slug}", response_model=models.DeckRead)

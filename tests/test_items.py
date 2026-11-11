@@ -22,7 +22,7 @@ async def registered_user(async_client: AsyncClient, mock_send_email):
     content = mock_send_email.call_args[0][2]
     import re
 
-    match = re.search(r"code: (\w+)", content)
+    match = re.search(r"code: (\S+)", content)
     captured_token = match.group(1)
 
     # Verify user

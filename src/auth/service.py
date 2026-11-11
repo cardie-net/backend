@@ -1,9 +1,10 @@
 import logging
 import random
 import re
+import secrets
 import string
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -83,10 +84,35 @@ async def generate_unique_username(db: AsyncSession, email: str) -> str:
     return username
 
 
+def _is_token_expired(expires_at: datetime | None) -> bool:
+    """Whether a token's expiry has passed.
+
+    Rows written before expiring tokens existed carry no timestamp; they are
+    treated as expired so no legacy link stays valid forever.
+    """
+    if expires_at is None:
+        return True
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) >= expires_at
+
+
+def _pending_expiry() -> datetime:
+    """Expiry stamp for a freshly staged registration."""
+    return datetime.now(timezone.utc) + timedelta(
+        hours=settings.PENDING_REGISTRATION_TTL_HOURS
+    )
+
+
+def _generate_secure_token() -> str:
+    """Generate an unguessable token for emailed links (verify, reset)."""
+    return secrets.token_urlsafe(32)
+
+
 async def _generate_verification_token(db: AsyncSession) -> str:
     """Generate a unique email verification token."""
     while True:
-        token = "".join(random.choices(string.ascii_letters + string.digits, k=10))
+        token = _generate_secure_token()
         statement = select(User).where(User.email_verification_token == token)
         results = await db.execute(statement)
         if not results.unique().scalars().first():
@@ -175,6 +201,11 @@ async def stage_pending_registration(
     # Another pending registration already holds this email
     pending_stmt = select(PendingRegistration).where(PendingRegistration.email == email)
     pending_existing = (await db.execute(pending_stmt)).unique().scalar_one_or_none()
+    if pending_existing is not None and _is_token_expired(pending_existing.expires_at):
+        # Abandoned or squatted staging: release the address for a real signup.
+        await db.delete(pending_existing)
+        await db.commit()
+        pending_existing = None
     if pending_existing is not None and (
         guest_user is None or pending_existing.guest_user_id != guest_user.id
     ):
@@ -213,6 +244,7 @@ async def stage_pending_registration(
         pending_existing.username = username
         pending_existing.display_name = username
         pending_existing.email_verification_token = token
+        pending_existing.expires_at = _pending_expiry()
         db.add(pending_existing)
         await db.commit()
         logger.info(
@@ -224,12 +256,14 @@ async def stage_pending_registration(
         # No session (e.g. curl signup): create a throwaway guest to attach to.
         # Resolve the staged username first so the throwaway guest (whose own
         # username derives from its email) cannot consume the desired one.
+        # The guest gets a boilerplate address: taking the requested email here
+        # would occupy it and block a later real signup after expiry.
         if not username:
             username = await generate_unique_username(db, email)
         guest_user = await create_user(
             db,
             UserCreate(
-                email=email,
+                email=f"guest_{uuid.uuid4().hex[:20]}@guest.example.com",
                 password=password,
                 is_guest=True,
                 username="g" + uuid.uuid4().hex[:12],
@@ -242,6 +276,7 @@ async def stage_pending_registration(
         username=username,
         display_name=username,
         email_verification_token=token,
+        expires_at=_pending_expiry(),
         guest_user_id=guest_user.id,
     )
     db.add(pending)
@@ -271,6 +306,11 @@ async def promote_guest_by_token(db: AsyncSession, token: str) -> User | None:
     result = await db.execute(stmt)
     pending = result.unique().scalars().first()
     if not pending:
+        return None
+    if _is_token_expired(pending.expires_at):
+        # Expired staging: drop it so the address can be registered again.
+        await db.delete(pending)
+        await db.commit()
         return None
 
     email_taken_stmt = select(User).where(User.email == pending.email)
@@ -351,6 +391,7 @@ async def _apply_guest_upgrade(
     guest_user.is_verified = True
     guest_user.email_verification_token = None
     guest_user.reset_password_token = None
+    guest_user.reset_password_expires_at = None
 
     db.add(guest_user)
     return guest_user
@@ -462,13 +503,16 @@ async def handle_oauth_callback(
 async def generate_reset_token(db: AsyncSession, user: User) -> str:
     """Generate a unique password reset token for the user."""
     while True:
-        token = "".join(random.choices(string.ascii_letters + string.digits, k=10))
+        token = _generate_secure_token()
         statement = select(User).where(User.reset_password_token == token)
         results = await db.execute(statement)
         if not results.unique().scalars().first():
             break
 
     user.reset_password_token = token
+    user.reset_password_expires_at = datetime.now(timezone.utc) + timedelta(
+        minutes=settings.RESET_TOKEN_TTL_MINUTES
+    )
     db.add(user)
     await db.commit()
     await db.refresh(user)
@@ -490,11 +534,12 @@ async def reset_password(
     statement = select(User).where(User.reset_password_token == token)
     result = await db.execute(statement)
     user = result.unique().scalar_one_or_none()
-    if not user:
+    if not user or _is_token_expired(user.reset_password_expires_at):
         return None
 
     user.hashed_password = get_password_hash(new_password)
     user.reset_password_token = None
+    user.reset_password_expires_at = None
     db.add(user)
     await db.commit()
     await db.refresh(user)

@@ -54,6 +54,18 @@ class UserRead(BaseModel):
     last_active_at: datetime | None = None
 
 
+class UserPublicRead(BaseModel):
+    """Fields safe to expose on a public profile; never email or account state."""
+
+    id: uuid.UUID
+    username: str
+    display_name: str
+    avatar_url: str | None = None
+    bio: str | None = None
+    social_links: dict[str, str] | None = None
+    created_at: datetime | None = None
+
+
 class UserCreate(BaseModel):
     email: str
     password: str

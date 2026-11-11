@@ -1,7 +1,8 @@
 import uuid
+from datetime import datetime, timezone
 from typing import AsyncGenerator
 
-from sqlalchemy import event, insert, text, update
+from sqlalchemy import delete, event, insert, or_, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel, select
 
@@ -48,6 +49,40 @@ CASCADE_FOREIGN_KEYS = [
     ("user_daily_activity", "user_id", "user", "id"),
     ("oauthaccount", "user_id", "user", "id"),
 ]
+
+# Columns added after the initial schema. create_all() only creates missing
+# tables, so existing databases need these applied explicitly at startup.
+TOKEN_EXPIRY_COLUMNS = [
+    ("pending_registrations", "expires_at", "TIMESTAMP"),
+    ("user", "reset_password_expires_at", "TIMESTAMP"),
+]
+
+
+async def _table_columns(conn, table: str) -> set[str]:
+    """Existing column names for a table, or an empty set when it is absent."""
+    if conn.dialect.name == "sqlite":
+        result = await conn.execute(text(f'PRAGMA table_info("{table}")'))
+        return {row[1] for row in result.fetchall()}
+
+    result = await conn.execute(
+        text(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = :table AND table_schema = current_schema()"
+        ),
+        {"table": table},
+    )
+    return {row[0] for row in result.fetchall()}
+
+
+async def _ensure_columns(conn, columns: list[tuple[str, str, str]]) -> None:
+    """Add columns that create_all() cannot add to an already existing table."""
+    for table, column, sql_type in columns:
+        existing = await _table_columns(conn, table)
+        if not existing or column in existing:
+            continue
+        await conn.execute(
+            text(f'ALTER TABLE "{table}" ADD COLUMN "{column}" {sql_type}')
+        )
 
 
 async def _ensure_postgres_foreign_key_cascades(conn) -> None:
@@ -166,16 +201,44 @@ async def _demote_guest_public_items(session: AsyncSession) -> None:
     await session.commit()
 
 
+async def _purge_expired_auth_tokens(session: AsyncSession) -> None:
+    """Release staged signups past their expiry and drop legacy reset tokens.
+
+    Tokens written before expiry tracking existed carry no timestamp; they are
+    treated as expired so a squatted address frees up and stale reset links die.
+    """
+    now = datetime.now(timezone.utc)
+    await session.execute(
+        delete(PendingRegistration).where(
+            or_(
+                PendingRegistration.expires_at.is_(None),
+                PendingRegistration.expires_at < now,
+            )
+        )
+    )
+    await session.execute(
+        update(User)
+        .where(
+            User.reset_password_token.is_not(None),
+            User.reset_password_expires_at.is_(None),
+        )
+        .values(reset_password_token=None)
+    )
+    await session.commit()
+
+
 async def create_db_and_tables() -> None:
     """Create all configured database tables."""
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
+        await _ensure_columns(conn, TOKEN_EXPIRY_COLUMNS)
         if conn.dialect.name == "postgresql":
             await _ensure_postgres_foreign_key_cascades(conn)
 
     async with async_session_maker() as session:
         await _migrate_legacy_unverified_users(session)
         await _demote_guest_public_items(session)
+        await _purge_expired_auth_tokens(session)
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:

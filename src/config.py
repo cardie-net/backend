@@ -30,6 +30,16 @@ class Settings(BaseSettings):
     SMTP_TIMEOUT: int = 5
     FRONTEND_URL: str = "http://localhost:3000"
 
+    # Extra browser origins allowed to call the API, comma separated, e.g.
+    # "https://app.example.com,http://localhost:3000". Empty means only
+    # FRONTEND_URL is allowed; wildcards are never accepted.
+    CORS_ALLOW_ORIGINS: str = ""
+
+    # Auth token lifetimes. Reset links and staged signups are short-lived so a
+    # leaked link or an abandoned registration cannot stay usable indefinitely.
+    RESET_TOKEN_TTL_MINUTES: int = 30
+    PENDING_REGISTRATION_TTL_HOURS: int = 24
+
     # Public base URL of this API, e.g. "https://cardie.net". Set it when the
     # backend runs behind a TLS-terminating reverse proxy: it is used to build
     # absolute URLs (Google OAuth redirect_uri) with the correct external
@@ -49,6 +59,16 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
     )
+
+    @property
+    def cors_origins(self) -> list[str]:
+        """Browser origins allowed by CORS; wildcards are never allowed."""
+        origins = [
+            origin
+            for origin in (part.strip() for part in self.CORS_ALLOW_ORIGINS.split(","))
+            if origin and origin != "*"
+        ]
+        return origins or [self.FRONTEND_URL]
 
 
 settings = Settings()

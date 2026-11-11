@@ -105,11 +105,7 @@ async def user_token(async_client: AsyncClient, mock_send_email) -> str:
     )
 
     # Extract token and verify
-    import re
-
-    content = mock_send_email.call_args[0][2]
-    match = re.search(r"code: (\w+)", content)
-    captured_token = match.group(1) if match else None
+    captured_token = extract_email_token(mock_send_email)
 
     await async_client.post("/api/v1/auth/verify", json={"token": captured_token})
 
@@ -138,11 +134,7 @@ async def user_token2(async_client: AsyncClient, mock_send_email) -> str:
         },
     )
 
-    import re
-
-    content = mock_send_email.call_args[0][2]
-    match = re.search(r"code: (\w+)", content)
-    captured_token = match.group(1) if match else None
+    captured_token = extract_email_token(mock_send_email)
 
     await async_client.post("/api/v1/auth/verify", json={"token": captured_token})
 
@@ -158,6 +150,7 @@ async def user_token2(async_client: AsyncClient, mock_send_email) -> str:
 
 
 def extract_email_token(mock_send_email_call) -> str:
+    """Verification code from the captured email (URL-safe tokens included)."""
     content = mock_send_email_call.call_args[0][2]
-    match = re.search(r"code: (\w+)", content)
+    match = re.search(r"code: (\S+)", content)
     return match.group(1) if match else None

@@ -1,11 +1,19 @@
 import uuid
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import insert, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.database import _demote_guest_public_items, _migrate_legacy_unverified_users
+from src.database import (
+    TOKEN_EXPIRY_COLUMNS,
+    _demote_guest_public_items,
+    _ensure_columns,
+    _migrate_legacy_unverified_users,
+    _purge_expired_auth_tokens,
+    _table_columns,
+)
 from src.models.tables import (
     Deck,
     Folder,
@@ -208,3 +216,82 @@ async def test_startup_migration_demotes_guest_items_via_api(
 
     get_resp = await async_client.get(f"/api/v1/decks/{deck_id}", headers=guest_cookie)
     assert get_resp.json()["privacy"] == "private"
+
+
+@pytest.mark.asyncio
+async def test_purge_expired_auth_tokens(async_session: AsyncSession):
+    user_id = uuid.uuid4()
+    await _insert_raw_user(
+        async_session, user_id, "purge@example.com", "purgeuser", is_guest=True
+    )
+
+    now = datetime.now(timezone.utc)
+    async_session.add_all(
+        [
+            PendingRegistration(
+                email="fresh-pending@example.com",
+                hashed_password="x",
+                email_verification_token="fresh-token",
+                guest_user_id=user_id,
+                expires_at=now + timedelta(hours=1),
+            ),
+            PendingRegistration(
+                email="expired-pending@example.com",
+                hashed_password="x",
+                email_verification_token="expired-token",
+                guest_user_id=user_id,
+                expires_at=now - timedelta(hours=1),
+            ),
+            PendingRegistration(
+                email="legacy-pending@example.com",
+                hashed_password="x",
+                email_verification_token="legacy-token",
+                guest_user_id=user_id,
+                expires_at=None,
+            ),
+        ]
+    )
+    user = await async_session.get(User, user_id)
+    user.reset_password_token = "legacy-reset-token"
+    user.reset_password_expires_at = None
+    async_session.add(user)
+    await async_session.commit()
+
+    await _purge_expired_auth_tokens(async_session)
+
+    remaining = {
+        pending.email
+        for pending in (
+            await async_session.execute(select(PendingRegistration))
+        ).scalars()
+    }
+    assert remaining == {"fresh-pending@example.com"}
+
+    await async_session.refresh(user)
+    assert user.reset_password_token is None
+
+
+@pytest.mark.asyncio
+async def test_token_expiry_columns_exist(async_session: AsyncSession):
+    conn = await async_session.connection()
+
+    assert "expires_at" in await _table_columns(conn, "pending_registrations")
+    assert "reset_password_expires_at" in await _table_columns(conn, "user")
+
+
+@pytest.mark.asyncio
+async def test_ensure_columns_adds_missing_column_idempotently(
+    async_session: AsyncSession,
+):
+    conn = await async_session.connection()
+    await conn.execute(text("CREATE TABLE legacy_probe (id INTEGER PRIMARY KEY)"))
+
+    await _ensure_columns(conn, [("legacy_probe", "expires_at", "TIMESTAMP")])
+    assert "expires_at" in await _table_columns(conn, "legacy_probe")
+
+    # Re-running, and targeting a table that does not exist, must be harmless.
+    await _ensure_columns(conn, [("legacy_probe", "expires_at", "TIMESTAMP")])
+    await _ensure_columns(conn, [("absent_table", "expires_at", "TIMESTAMP")])
+
+    assert "expires_at" in await _table_columns(conn, "legacy_probe")
+    assert TOKEN_EXPIRY_COLUMNS[0][1] == "expires_at"

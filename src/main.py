@@ -30,9 +30,12 @@ app = FastAPI(
 # Added before CORS so CORS stays outermost and decorates early 413 responses.
 app.add_middleware(UploadSizeLimitMiddleware)
 
+# Credentials are allowed, so the origin list must be explicit: Starlette
+# reflects any Origin when the list is "*", which would let other sites read
+# authenticated responses. settings.cors_origins never contains a wildcard.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
